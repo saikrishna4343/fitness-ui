@@ -134,7 +134,7 @@ export default function Workout() {
               </div>
             )}
 
-            <ExerciseChecklist workout={workout} date={isoDate} showLogging />
+            <ExerciseChecklist workout={workout} date={isoDate} showLogging editable />
 
             {!workout.restDay && workout.totalCount > 0 && (
               <div className="flex flex-wrap gap-2">

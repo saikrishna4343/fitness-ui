@@ -56,7 +56,8 @@ The schema, policies and functions are in `supabase/`. Run them in the Supabase 
 | 3 | `09_indexes.sql` | Indexes for the paths `01_schema.sql` did not cover |
 | 4 | `03_api.sql` | Read functions, grants, check constraints |
 | 5 | `06_api_writes.sql` | Write functions: status transitions, `order_index` maintenance |
-| 6 | `02_row_level_security.sql` | **Last.** Policies |
+| 6 | `10_reorder_session_exercises.sql` | Move an exercise within one day's workout |
+| 7 | `02_row_level_security.sql` | **Last.** Policies |
 
 `08_audit_columns.sql` is also re-runnable on its own: it finds every table in the schema,
 so a table added later picks up the same five columns and the same trigger by running it
