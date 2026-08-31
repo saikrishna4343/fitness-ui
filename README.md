@@ -60,6 +60,11 @@ Row level security goes last on purpose. Every policy tests `auth.uid()`; applie
 the browser is sending a real JWT, that is null, every policy evaluates false, and every
 table looks empty. It reads exactly like the database was wiped.
 
+`supabase/07_split_display_name.sql` is not part of setup either. It replaces the old
+single `display_name` column with `first_name` / `last_name` on a database created before
+that split, backfilling the existing names. Run it once, then re-run `03_api.sql`. A fresh
+install gets both columns from `01_schema.sql` and must skip it.
+
 `supabase/05_adopt_dev_data.sql` is not part of setup. It is a one-time migration kept for
 reference, from when this app ran behind a Spring Boot service that hardcoded a single dev
 user id — it moves those rows onto a real account. A fresh install has nothing to adopt.

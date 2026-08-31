@@ -25,7 +25,8 @@ create extension if not exists pgcrypto;
 
 create table fitness.user_profile (
     user_id            uuid primary key,
-    display_name       text,
+    first_name         text,
+    last_name          text,
     sex                text check (sex in ('MALE', 'FEMALE', 'OTHER')),
     height_cm          integer,
     weight_kg          numeric(6, 2),

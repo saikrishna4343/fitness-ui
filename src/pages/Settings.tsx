@@ -55,7 +55,8 @@ function ProfileForm({ profile }: { profile: Profile }) {
     event.preventDefault()
     update.mutate(
       {
-        displayName: form.displayName,
+        firstName: form.firstName,
+        lastName: form.lastName,
         sex: form.sex,
         heightCm: form.heightCm,
         weightKg: form.weightKg,
@@ -84,11 +85,20 @@ function ProfileForm({ profile }: { profile: Profile }) {
       <CardContent>
         <form onSubmit={onSubmit} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Name" htmlFor="display-name">
+            <Field label="First name" htmlFor="first-name">
               <Input
-                id="display-name"
-                value={form.displayName ?? ''}
-                onChange={(event) => set('displayName', event.target.value)}
+                id="first-name"
+                autoComplete="given-name"
+                value={form.firstName ?? ''}
+                onChange={(event) => set('firstName', event.target.value)}
+              />
+            </Field>
+            <Field label="Last name" htmlFor="last-name">
+              <Input
+                id="last-name"
+                autoComplete="family-name"
+                value={form.lastName ?? ''}
+                onChange={(event) => set('lastName', event.target.value)}
               />
             </Field>
             <Field label="Sex" htmlFor="sex">

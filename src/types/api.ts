@@ -15,7 +15,8 @@ export type WorkoutStatus = 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED'
 
 export interface Profile {
   userId: string
-  displayName: string | null
+  firstName: string | null
+  lastName: string | null
   sex: string | null
   heightCm: number | null
   weightKg: number | null

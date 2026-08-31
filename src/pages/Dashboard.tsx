@@ -29,7 +29,7 @@ export default function Dashboard() {
   return (
     <>
       <PageHeader
-        title={profile?.displayName ? `Hi, ${profile.displayName}` : 'Today'}
+        title={profile?.firstName ? `Hi, ${profile.firstName}` : 'Today'}
         description={new Date().toLocaleDateString(undefined, {
           weekday: 'long',
           day: 'numeric',

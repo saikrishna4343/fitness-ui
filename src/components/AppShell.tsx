@@ -17,6 +17,7 @@ import { useAuth } from '@/auth/AuthProvider'
 import { useTheme } from '@/components/ThemeProvider'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { fullName } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 const NAV = [
@@ -67,7 +68,7 @@ export function AppShell() {
         <div className="mt-auto space-y-1">
           <Separator className="my-3" />
           <p className="truncate px-3 pb-1 text-xs text-muted-foreground">
-            {profile?.displayName || 'Signed in'}
+            {fullName(profile?.firstName, profile?.lastName) ?? 'Signed in'}
           </p>
           <Button variant="ghost" size="sm" className="w-full justify-start gap-3" onClick={toggle}>
             {theme === 'dark' ? <Moon className="size-4" /> : <Sun className="size-4" />}
