@@ -107,7 +107,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
               <span className="font-medium text-foreground">
                 {fullName(form.firstName, form.lastName) ?? 'Signed in'}
               </span>
-              . The dashboard greets you by first name only.
+              , on the dashboard greeting and in the sidebar.
             </p>
             <Field label="Sex" htmlFor="sex">
               <Input

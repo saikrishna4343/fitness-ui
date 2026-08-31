@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatTime, kcal, toIsoDate } from '@/lib/format'
+import { formatTime, fullName, kcal, toIsoDate } from '@/lib/format'
 import { MEAL_LABELS } from '@/types/api'
 
 export default function Dashboard() {
@@ -25,11 +25,13 @@ export default function Dashboard() {
   const { data: entries = [] } = useFoodEntries(isoDate)
 
   const recent = [...entries].reverse().slice(0, 5)
+  // Falls back to 'Today' until the profile loads, so the header never flashes a bare "Hi,".
+  const greeting = fullName(profile?.firstName, profile?.lastName)
 
   return (
     <>
       <PageHeader
-        title={profile?.firstName ? `Hi, ${profile.firstName}` : 'Today'}
+        title={greeting ? `Hi, ${greeting}` : 'Today'}
         description={new Date().toLocaleDateString(undefined, {
           weekday: 'long',
           day: 'numeric',
