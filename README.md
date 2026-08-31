@@ -46,9 +46,8 @@ Two rules hold throughout that file:
 
 ### 1. The database
 
-The schema, policies and functions live in SQL files alongside this repo, in
-`../fitness-api/supabase/`. Run them in the Supabase SQL editor **in this order** — the
-numbering is not the run order:
+The schema, policies and functions are in `supabase/`. Run them in the Supabase SQL editor
+**in this order** — the numbering is not the run order:
 
 | Order | File | What it does |
 |---|---|---|
@@ -60,6 +59,10 @@ numbering is not the run order:
 Row level security goes last on purpose. Every policy tests `auth.uid()`; applied before
 the browser is sending a real JWT, that is null, every policy evaluates false, and every
 table looks empty. It reads exactly like the database was wiped.
+
+`supabase/05_adopt_dev_data.sql` is not part of setup. It is a one-time migration kept for
+reference, from when this app ran behind a Spring Boot service that hardcoded a single dev
+user id — it moves those rows onto a real account. A fresh install has nothing to adopt.
 
 ### 2. Expose the schema
 
