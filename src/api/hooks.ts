@@ -682,6 +682,46 @@ export function useDeleteSessionExercise(date: string) {
   })
 }
 
+/**
+ * Edits the targets on ONE session's exercise. A plain update, not an RPC: nothing
+ * else has to move. The plan template is untouched -- correcting today's weight is
+ * not a decision about every future Monday.
+ */
+export function useUpdateSessionExercise(date: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, body }: { id: string; body: AddSessionExerciseRequest }) =>
+      ok(
+        await supabase
+          .from('session_exercise')
+          .update({
+            name: body.name,
+            target_sets: body.targetSets,
+            target_reps: body.targetReps,
+            target_weight_kg: body.targetWeightKg ?? null,
+            notes: body.notes ?? null,
+          })
+          .eq('id', id),
+      ),
+    onSuccess: () => invalidateDay(client, date),
+  })
+}
+
+/** Sends the ids in their new order; the server assigns order_index by position. */
+export function useReorderSessionExercises(date: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ sessionId, exerciseIds }: { sessionId: string; exerciseIds: string[] }) =>
+      ok(
+        await supabase.rpc('reorder_session_exercises', {
+          p_session_id: sessionId,
+          p_ids: exerciseIds,
+        }),
+      ),
+    onSuccess: () => invalidateDay(client, date),
+  })
+}
+
 export function useReloadWorkoutFromPlan(date: string) {
   const client = useQueryClient()
   return useMutation({
@@ -725,10 +765,20 @@ export function useTickExercise(date: string) {
         const exercises = previous.exercises.map((exercise) =>
           exercise.id === id ? { ...exercise, ...body } : exercise,
         )
+        const done = exercises.filter((exercise) => exercise.completed).length
         client.setQueryData<Workout>(queryKeys.workout(date), {
           ...previous,
           exercises,
-          completedCount: exercises.filter((exercise) => exercise.completed).length,
+          completedCount: done,
+          // Mirrors the status rule in tick_session_exercise. Without it the badge
+          // still reads "Completed" until the refetch lands, which is the lag that
+          // made unticking look broken.
+          status:
+            done === 0
+              ? 'PLANNED'
+              : done < exercises.length
+                ? 'IN_PROGRESS'
+                : previous.status,
         })
       }
       return { previous }
@@ -760,6 +810,15 @@ export function useCompleteWorkout(date: string) {
       void client.invalidateQueries({ queryKey: queryKeys.summary(date) })
       void client.invalidateQueries({ queryKey: ['summary-range'] })
     },
+  })
+}
+
+/** Undo for "Mark workout complete" and "Skip today". Leaves the exercise ticks alone. */
+export function useReopenWorkout(date: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => ok(await supabase.rpc('reopen_workout', { p_session_id: id })),
+    onSuccess: () => invalidateDay(client, date),
   })
 }
 

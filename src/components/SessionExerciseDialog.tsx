@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { useAddSessionExercise } from '@/api/hooks'
+import { useAddSessionExercise, useUpdateSessionExercise } from '@/api/hooks'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import type { WorkoutExercise } from '@/types/api'
 
 const schema = z.object({
   name: z.string().min(1, 'Give the exercise a name'),
@@ -28,57 +29,79 @@ type FormValues = z.input<typeof schema>
 
 const EMPTY: FormValues = { name: '', targetSets: 3, targetReps: '10', targetWeightKg: '' }
 
+/** Prefills the form from an existing row. Weight is a string field so it can be empty. */
+const toFormValues = (exercise: WorkoutExercise): FormValues => ({
+  name: exercise.name,
+  targetSets: exercise.targetSets,
+  targetReps: exercise.targetReps,
+  targetWeightKg: exercise.targetWeightKg?.toString() ?? '',
+})
+
+/**
+ * Add an exercise to one day's workout, or edit one already there -- pass
+ * `exercise` for the second. One dialog rather than two: the fields are identical,
+ * and a second copy would drift from this one the first time the schema changes.
+ */
 export function SessionExerciseDialog({
   open,
   onOpenChange,
   workoutId,
   date,
+  exercise,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   workoutId: string
   date: string
+  exercise?: WorkoutExercise
 }) {
   const add = useAddSessionExercise(date)
+  const update = useUpdateSessionExercise(date)
+  const editing = exercise !== undefined
+  const pending = add.isPending || update.isPending
 
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: EMPTY })
 
+  // Reset on open, not on mount: the dialog stays mounted between edits, so
+  // without this the second exercise you open still shows the first one's values.
   useEffect(() => {
-    if (open) form.reset(EMPTY)
-  }, [open, form])
+    if (open) form.reset(exercise ? toFormValues(exercise) : EMPTY)
+  }, [open, exercise, form])
 
   const onSubmit = form.handleSubmit((raw) => {
     const values = schema.parse(raw)
     const weight = values.targetWeightKg?.trim()
+    const body = {
+      name: values.name,
+      targetSets: values.targetSets,
+      targetReps: values.targetReps,
+      targetWeightKg: weight ? Number(weight) : null,
+      notes: exercise?.notes ?? null,
+    }
 
-    add.mutate(
-      {
-        id: workoutId,
-        body: {
-          name: values.name,
-          targetSets: values.targetSets,
-          targetReps: values.targetReps,
-          targetWeightKg: weight ? Number(weight) : null,
-          notes: null,
-        },
+    const handlers = {
+      onSuccess: () => {
+        toast.success(`${values.name} ${editing ? 'updated' : 'added'}`)
+        onOpenChange(false)
       },
-      {
-        onSuccess: () => {
-          toast.success(`${values.name} added`)
-          onOpenChange(false)
-        },
-        onError: (error) => toast.error(error.message),
-      },
-    )
+      onError: (error: Error) => toast.error(error.message),
+    }
+
+    if (editing) {
+      update.mutate({ id: exercise.id, body }, handlers)
+    } else {
+      add.mutate({ id: workoutId, body }, handlers)
+    }
   })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add an exercise</DialogTitle>
+          <DialogTitle>{editing ? `Edit ${exercise.name}` : 'Add an exercise'}</DialogTitle>
           <DialogDescription>
-            Added to this day only — your weekly plan stays as it is.
+            {editing ? 'Changes apply' : 'Added'} to this day only — your weekly plan stays as it
+            is.
           </DialogDescription>
         </DialogHeader>
 
@@ -133,12 +156,18 @@ export function SessionExerciseDialog({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={add.isPending}
+              disabled={pending}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={add.isPending}>
-              {add.isPending ? 'Adding…' : 'Add exercise'}
+            <Button type="submit" disabled={pending}>
+              {pending
+                ? editing
+                  ? 'Saving…'
+                  : 'Adding…'
+                : editing
+                  ? 'Save changes'
+                  : 'Add exercise'}
             </Button>
           </DialogFooter>
         </form>
