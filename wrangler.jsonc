@@ -1,0 +1,21 @@
+{
+  // Cloudflare Workers config. `npx wrangler deploy` reads this to work out what to
+  // upload -- without it the deploy fails, because nothing tells wrangler there is a
+  // built site in ./dist.
+  //
+  // There is no Worker script here. This is a static site: `assets` alone is a valid
+  // deployment, and Cloudflare serves the files directly from its edge.
+  "name": "fitness-ui",
+  "compatibility_date": "2026-08-30",
+
+  "assets": {
+    "directory": "./dist",
+
+    // React Router owns /food, /workout, /plan, /progress and /settings, none of
+    // which exist as files. Without this, a refresh or a shared link to any route
+    // other than / returns Cloudflare's 404 and the app never boots to handle it.
+    // This is the Workers equivalent of the /* -> /index.html 200 rule in
+    // public/_redirects, which stays for any host that reads that instead.
+    "not_found_handling": "single-page-application"
+  }
+}
