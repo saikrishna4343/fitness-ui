@@ -118,7 +118,7 @@ Static build, so anything that serves files works. On Cloudflare Pages:
 | Setting | Value |
 |---|---|
 | Build command | `npm run build` |
-| Output directory | `dist` |
+| Deploy command | `npx wrangler deploy` |
 | `VITE_SUPABASE_URL` | your project URL |
 | `VITE_SUPABASE_ANON_KEY` | your anon key |
 | `NODE_VERSION` | `22` |
@@ -132,9 +132,16 @@ set **Site URL** to the deployed origin and add it to **Redirect URLs**. Confirm
 password-reset emails are generated against Site URL, so leaving it on `localhost:5173`
 sends production users to their own machine.
 
-`public/_redirects` handles SPA routing (`/* /index.html 200`). Without it, a refresh or a
-shared link to `/food` returns the host's 404, because that path is not a file — the app
+There is no output-directory field: `wrangler.jsonc` supplies it (`assets.directory`),
+along with `not_found_handling: "single-page-application"`. That second setting is what
+makes SPA routing work — React Router owns `/food`, `/workout` and the rest, none of which
+are files, so without it a refresh or a shared link returns Cloudflare's 404 and the app
 never boots to handle it.
+
+Do **not** also add a `public/_redirects` with `/* /index.html 200`. Wrangler parses that
+file and rejects the rule as an infinite loop, since `/index.html` itself matches `/*` —
+the deploy fails after a successful build. On a host that isn't Cloudflare, that rule is
+the right way to get the same behaviour.
 
 ## Notes
 
