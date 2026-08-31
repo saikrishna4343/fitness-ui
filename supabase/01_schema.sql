@@ -14,6 +14,11 @@
 --
 -- Row level security is deliberately NOT enabled here -- see
 -- 02_row_level_security.sql, which must not be run until auth is on.
+--
+-- The maintenance columns (status, created_at/by, updated_at/by) are NOT here
+-- either: 08_audit_columns.sql adds them to every table in one loop, so there is
+-- no per-table boilerplate below and a table added later picks them up by
+-- re-running that file. Run it straight after this one.
 
 create schema if not exists fitness;
 

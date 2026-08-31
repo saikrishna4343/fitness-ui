@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { fullName } from '@/lib/format'
 import type { Profile } from '@/types/api'
 
 const GOALS = [
@@ -101,6 +102,13 @@ function ProfileForm({ profile }: { profile: Profile }) {
                 onChange={(event) => set('lastName', event.target.value)}
               />
             </Field>
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Shown around the app as{' '}
+              <span className="font-medium text-foreground">
+                {fullName(form.firstName, form.lastName) ?? 'Signed in'}
+              </span>
+              . The dashboard greets you by first name only.
+            </p>
             <Field label="Sex" htmlFor="sex">
               <Input
                 id="sex"

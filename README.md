@@ -52,9 +52,14 @@ The schema, policies and functions are in `supabase/`. Run them in the Supabase 
 | Order | File | What it does |
 |---|---|---|
 | 1 | `01_schema.sql` | Tables |
-| 2 | `03_api.sql` | Read functions, grants, check constraints |
-| 3 | `06_api_writes.sql` | Write functions: status transitions, `order_index` maintenance |
-| 4 | `02_row_level_security.sql` | **Last.** Policies |
+| 2 | `08_audit_columns.sql` | `status` and the created/updated by-and-when columns, on every table |
+| 3 | `03_api.sql` | Read functions, grants, check constraints |
+| 4 | `06_api_writes.sql` | Write functions: status transitions, `order_index` maintenance |
+| 5 | `02_row_level_security.sql` | **Last.** Policies |
+
+`08_audit_columns.sql` is also re-runnable on its own: it finds every table in the schema,
+so a table added later picks up the same five columns and the same trigger by running it
+again. Nothing else in the schema lists those columns.
 
 Row level security goes last on purpose. Every policy tests `auth.uid()`; applied before
 the browser is sending a real JWT, that is null, every policy evaluates false, and every
