@@ -1,9 +1,10 @@
-import { CheckCircle2, Plus, RotateCcw, SkipForward } from 'lucide-react'
+import { CheckCircle2, Plus, RotateCcw, SkipForward, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import {
   useCompleteWorkout,
   useReloadWorkoutFromPlan,
+  useReopenWorkout,
   useSkipWorkout,
   useUpdateWorkout,
   useWorkout,
@@ -39,6 +40,7 @@ export default function Workout() {
   const skip = useSkipWorkout(isoDate)
   const update = useUpdateWorkout(isoDate)
   const reload = useReloadWorkoutFromPlan(isoDate)
+  const reopen = useReopenWorkout(isoDate)
 
   function toggleRestDay(restDay: boolean) {
     if (!workout) return
@@ -165,6 +167,22 @@ export default function Workout() {
                   <SkipForward className="size-4" />
                   Skip today
                 </Button>
+                {(workout.status === 'COMPLETED' || workout.status === 'SKIPPED') && (
+                  <Button
+                    variant="ghost"
+                    className="gap-2"
+                    disabled={reopen.isPending}
+                    onClick={() =>
+                      reopen.mutate(workout.id, {
+                        onSuccess: () => toast('Workout reopened'),
+                        onError: (error) => toast.error(error.message),
+                      })
+                    }
+                  >
+                    <Undo2 className="size-4" />
+                    Reopen
+                  </Button>
+                )}
               </div>
             )}
           </CardContent>

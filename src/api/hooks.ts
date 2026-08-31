@@ -765,10 +765,20 @@ export function useTickExercise(date: string) {
         const exercises = previous.exercises.map((exercise) =>
           exercise.id === id ? { ...exercise, ...body } : exercise,
         )
+        const done = exercises.filter((exercise) => exercise.completed).length
         client.setQueryData<Workout>(queryKeys.workout(date), {
           ...previous,
           exercises,
-          completedCount: exercises.filter((exercise) => exercise.completed).length,
+          completedCount: done,
+          // Mirrors the status rule in tick_session_exercise. Without it the badge
+          // still reads "Completed" until the refetch lands, which is the lag that
+          // made unticking look broken.
+          status:
+            done === 0
+              ? 'PLANNED'
+              : done < exercises.length
+                ? 'IN_PROGRESS'
+                : previous.status,
         })
       }
       return { previous }
@@ -800,6 +810,15 @@ export function useCompleteWorkout(date: string) {
       void client.invalidateQueries({ queryKey: queryKeys.summary(date) })
       void client.invalidateQueries({ queryKey: ['summary-range'] })
     },
+  })
+}
+
+/** Undo for "Mark workout complete" and "Skip today". Leaves the exercise ticks alone. */
+export function useReopenWorkout(date: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => ok(await supabase.rpc('reopen_workout', { p_session_id: id })),
+    onSuccess: () => invalidateDay(client, date),
   })
 }
 
