@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatTime, fullName, kcal, toIsoDate } from '@/lib/format'
+import { formatTime, kcal, toIsoDate } from '@/lib/format'
 import { MEAL_LABELS } from '@/types/api'
 
 export default function Dashboard() {
@@ -25,8 +25,9 @@ export default function Dashboard() {
   const { data: entries = [] } = useFoodEntries(isoDate)
 
   const recent = [...entries].reverse().slice(0, 5)
-  // Falls back to 'Today' until the profile loads, so the header never flashes a bare "Hi,".
-  const greeting = fullName(profile?.firstName, profile?.lastName)
+  // First name only -- the sidebar carries the full name. Falls back to 'Today'
+  // until the profile loads, so the header never flashes a bare "Hi,".
+  const greeting = profile?.firstName?.trim()
 
   return (
     <>
