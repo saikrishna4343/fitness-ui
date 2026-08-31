@@ -62,12 +62,30 @@ declare
     -- `authenticated` has no select on that table. The claim carries the same
     -- user_metadata the sign-up wrote.
     meta   jsonb := coalesce(auth.jwt() -> 'user_metadata', '{}'::jsonb);
+    v_first text;
+    v_last  text;
 begin
+    -- An account created before the form was split has display_name in its
+    -- metadata instead. Fall back to splitting it, so those users get a name
+    -- too rather than an empty greeting forever.
+    v_first := nullif(trim(coalesce(meta ->> 'first_name',
+                                    split_part(trim(meta ->> 'display_name'), ' ', 1))), '');
+    v_last  := nullif(trim(coalesce(meta ->> 'last_name',
+                                    nullif(substr(trim(meta ->> 'display_name'),
+                                                  nullif(strpos(trim(meta ->> 'display_name'), ' '), 0) + 1),
+                                           trim(meta ->> 'display_name')))), '');
+
     insert into fitness.user_profile (user_id, first_name, last_name)
-    values (auth.uid(), nullif(meta ->> 'first_name', ''), nullif(meta ->> 'last_name', ''))
+    values (auth.uid(), v_first, v_last)
+    -- The target row is referenced by the table's NAME here, never
+    -- schema-qualified: `fitness.user_profile.first_name` in this clause is a
+    -- missing-FROM-clause error, and it takes the whole CREATE FUNCTION with it.
     on conflict (user_id) do update
-       set first_name = coalesce(fitness.user_profile.first_name, excluded.first_name),
-           last_name  = coalesce(fitness.user_profile.last_name, excluded.last_name);
+       set first_name = coalesce(user_profile.first_name, excluded.first_name),
+           last_name  = coalesce(user_profile.last_name, excluded.last_name)
+       -- Only when there is something to fill. Without this the row is rewritten
+       -- on every page load, which now bumps updated_at/updated_by for nothing.
+       where user_profile.first_name is null or user_profile.last_name is null;
 
     select * into result from fitness.user_profile where user_id = auth.uid();
     return result;
