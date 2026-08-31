@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Check, Pencil, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, GripVertical, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useDeleteSessionExercise, useReorderSessionExercises, useTickExercise } from '@/api/hooks'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useDragReorder } from '@/lib/useDragReorder'
 import { cn } from '@/lib/utils'
 import type { Workout, WorkoutExercise } from '@/types/api'
 
@@ -33,20 +34,29 @@ export function ExerciseChecklist({
   const reorder = useReorderSessionExercises(date)
   const [editingExercise, setEditingExercise] = useState<WorkoutExercise | null>(null)
 
+  const ids = workout.exercises.map((exercise) => exercise.id)
+
   /**
-   * Swap with the neighbour and send the whole id list. Positions are never sent --
-   * two tabs would disagree about what "index 2" means, an id order cannot.
+   * Send the whole id list in its new order. Positions are never sent -- two tabs
+   * would disagree about what "index 2" means, an id order cannot.
    */
-  function move(index: number, direction: -1 | 1) {
-    const ids = workout.exercises.map((exercise) => exercise.id)
-    const target = index + direction
-    if (target < 0 || target >= ids.length) return
-    ;[ids[index], ids[target]] = [ids[target], ids[index]]
+  function save(nextIds: string[]) {
     reorder.mutate(
-      { sessionId: workout.id, exerciseIds: ids },
+      { sessionId: workout.id, exerciseIds: nextIds },
       { onError: (error) => toast.error(error.message) },
     )
   }
+
+  /** The up/down buttons: a plain swap with the neighbour. */
+  function move(index: number, direction: -1 | 1) {
+    const next = [...ids]
+    const target = index + direction
+    if (target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target], next[index]]
+    save(next)
+  }
+
+  const drag = useDragReorder(ids, save)
 
   if (workout.restDay) {
     return (
@@ -70,11 +80,29 @@ export function ExerciseChecklist({
         {workout.exercises.map((exercise, index) => (
           <li
             key={exercise.id}
+            ref={editable ? drag.rowRef(exercise.id) : undefined}
+            {...(editable ? drag.rowProps(exercise.id) : {})}
             className={cn(
               'flex flex-wrap items-center gap-3 px-3 py-3 transition-colors',
               exercise.completed && 'bg-muted/40',
+              drag.dragging === exercise.id && 'opacity-40',
+              // A line on the edge the row will land against, so the drop point is
+              // visible before letting go.
+              drag.over === exercise.id &&
+                (ids.indexOf(drag.dragging ?? '') < index
+                  ? 'border-b-2 border-b-primary'
+                  : 'border-t-2 border-t-primary'),
             )}
           >
+            {editable && (
+              <span
+                {...drag.handleProps(exercise.id)}
+                aria-hidden
+                className="-ml-1 cursor-grab text-muted-foreground/50 transition-colors hover:text-muted-foreground active:cursor-grabbing"
+              >
+                <GripVertical className="size-4" />
+              </span>
+            )}
             <Checkbox
               id={`exercise-${exercise.id}`}
               checked={exercise.completed}

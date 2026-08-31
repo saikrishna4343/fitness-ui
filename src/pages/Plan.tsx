@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Check, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, GripVertical, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -17,6 +17,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { useDragReorder } from '@/lib/useDragReorder'
+import { cn } from '@/lib/utils'
 import type { PlanDay, PlanExercise } from '@/types/api'
 
 export default function Plan() {
@@ -68,13 +70,21 @@ function DayCard({ day }: { day: PlanDay }) {
     )
   }
 
-  function move(index: number, direction: -1 | 1) {
-    const ids = day.exercises.map((exercise) => exercise.id)
-    const target = index + direction
-    if (target < 0 || target >= ids.length) return
-    ;[ids[index], ids[target]] = [ids[target], ids[index]]
-    reorder.mutate({ dayOfWeek: day.dayOfWeek, exerciseIds: ids })
+  const ids = day.exercises.map((exercise) => exercise.id)
+
+  function save(nextIds: string[]) {
+    reorder.mutate({ dayOfWeek: day.dayOfWeek, exerciseIds: nextIds })
   }
+
+  function move(index: number, direction: -1 | 1) {
+    const next = [...ids]
+    const target = index + direction
+    if (target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target], next[index]]
+    save(next)
+  }
+
+  const drag = useDragReorder(ids, save)
 
   return (
     <Card>
@@ -169,6 +179,8 @@ function DayCard({ day }: { day: PlanDay }) {
                     isLast={index === day.exercises.length - 1}
                     onMoveUp={() => move(index, -1)}
                     onMoveDown={() => move(index, 1)}
+                    drag={drag}
+                    isDropBelow={ids.indexOf(drag.dragging ?? '') < index}
                   />
                 ))}
               </ul>
@@ -206,12 +218,16 @@ function ExerciseRow({
   isLast,
   onMoveUp,
   onMoveDown,
+  drag,
+  isDropBelow,
 }: {
   exercise: PlanExercise
   isFirst: boolean
   isLast: boolean
   onMoveUp: () => void
   onMoveDown: () => void
+  drag: ReturnType<typeof useDragReorder>
+  isDropBelow: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const update = useUpdatePlanExercise()
@@ -235,7 +251,24 @@ function ExerciseRow({
   }
 
   return (
-    <li className="flex items-center gap-2 px-3 py-2.5">
+    <li
+      ref={drag.rowRef(exercise.id)}
+      {...drag.rowProps(exercise.id)}
+      className={cn(
+        'flex items-center gap-2 px-3 py-2.5 transition-colors',
+        drag.dragging === exercise.id && 'opacity-40',
+        drag.over === exercise.id &&
+          (isDropBelow ? 'border-b-2 border-b-primary' : 'border-t-2 border-t-primary'),
+      )}
+    >
+      <span
+        {...drag.handleProps(exercise.id)}
+        aria-hidden
+        className="-ml-1 cursor-grab text-muted-foreground/50 transition-colors hover:text-muted-foreground active:cursor-grabbing"
+      >
+        <GripVertical className="size-4" />
+      </span>
+
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{exercise.name}</p>
         <p className="text-xs text-muted-foreground">
