@@ -3,72 +3,100 @@
 Track your daily food and calorie intake, and follow an editable weekly workout plan that
 you tick off as you go.
 
+There is no application server. The browser talks to Supabase directly — PostgREST for
+CRUD, Postgres functions for the parts that carry real logic — and row level security
+scopes every query to the signed-in user.
+
 - Vite + React 19 + TypeScript
 - shadcn/ui on Tailwind CSS v4, light and dark
 - TanStack Query for server state, react-hook-form + zod for forms, Recharts for the charts
-- Supabase Auth for sign-up/sign-in; all data goes through [`fitness-api`](../fitness-api)
+- Supabase for auth and data
+
+## How it fits together
+
+```
+browser  →  Supabase Auth (GoTrue)      sign-in, JWT, refresh
+         →  PostgREST                   tables + RPC, under the `fitness` schema
+         →  Postgres + RLS              every policy tests auth.uid()
+```
+
+`src/api/hooks.ts` is the only module that touches the network. Pages and components
+consume hooks and never see Supabase, which is what made replacing the old Spring Boot
+service a one-file change.
+
+Two rules hold throughout that file:
+
+- **Nothing filters by user id.** RLS does it, in the database, on every query — including
+  the ones nobody remembered to check.
+- **Postgres is snake_case, the UI is camelCase.** The conversion happens there and nowhere
+  else, via PostgREST select aliases, so `src/types/api.ts` stays clean.
 
 ## Screens
 
 | Route | What it does |
 |---|---|
 | `/` | Today at a glance: calorie ring against your goal, macro bars, and today's workout with a checkbox per exercise. |
-| `/food` | The food log for any date. Entries grouped by meal, each showing the time you ate. Add, edit, delete. |
-| `/workout` | The full workout for any date: tick exercises, record the weight and reps you actually did, complete or skip. |
+| `/food` | The food log for any date. Entries grouped by meal, each showing the time you ate. Add, edit, delete, and set that day's goal. |
+| `/workout` | The full workout for any date: tick exercises, record the weight and reps you actually did, add one-off exercises, complete or skip. |
 | `/plan` | The weekly split. Set each day's focus, mark rest days, add/edit/reorder exercises. |
 | `/progress` | Calories and macros per day over 7/30/90 days, with a table view, plus streak and workout stats. |
-| `/settings` | Your profile, calorie and macro goals, and your saved-foods library. |
-
-## Running without a backend (mock mode)
-
-`fitness-api` and Supabase are not required to work on the UI. With mock mode on, a
-Mock Service Worker answers every API call from a generated dataset — a full profile,
-a 5-day training split, and ~120 days of food and workout history — and auth is stubbed
-so you land straight on the dashboard.
-
-```sh
-echo "VITE_USE_MOCKS=true" > .env.local
-npm run dev
-```
-
-- **Env vars are read at startup** — restart the dev server after changing `.env.local`.
-- You start signed in. Sign out works, and any email/password signs you back in.
-- Writes (logging food, ticking exercises, editing the plan) mutate an in-memory store,
-  so they behave like a real backend until you reload.
-- Requests show up in the Network tab as normal; unhandled ones warn in the console.
-
-Everything lives in `src/mocks/`. To switch to the real backend, set `VITE_USE_MOCKS=false`
-and fill in the Supabase values below. To remove mock mode entirely, delete `src/mocks/`
-and `public/mockServiceWorker.js`, then drop the `enableMocks()` block in `src/main.tsx`
-and the `useMocks` branch in `src/lib/supabase.ts`.
+| `/settings` | Your profile, default calorie and macro goals, and your saved-foods library. |
 
 ## Setup
 
-1. Get [`fitness-api`](../fitness-api/README.md) running first — it owns the database.
-2. Copy the env template and fill it in from Supabase → Project Settings → API:
+### 1. The database
 
-   ```sh
-   cp .env.example .env.local
-   ```
+The schema, policies and functions live in SQL files alongside this repo, in
+`../fitness-api/supabase/`. Run them in the Supabase SQL editor **in this order** — the
+numbering is not the run order:
 
-   ```sh
-   VITE_SUPABASE_URL=https://<project-ref>.supabase.co
-   VITE_SUPABASE_ANON_KEY=<anon public key>
-   VITE_API_BASE_URL=http://localhost:8080
-   ```
+| Order | File | What it does |
+|---|---|---|
+| 1 | `01_schema.sql` | Tables |
+| 2 | `03_api.sql` | Read functions, grants, check constraints |
+| 3 | `06_api_writes.sql` | Write functions: status transitions, `order_index` maintenance |
+| 4 | `02_row_level_security.sql` | **Last.** Policies |
 
-   The app throws a clear error on start if these are missing.
+Row level security goes last on purpose. Every policy tests `auth.uid()`; applied before
+the browser is sending a real JWT, that is null, every policy evaluates false, and every
+table looks empty. It reads exactly like the database was wiped.
 
-3. Install and run:
+### 2. Expose the schema
 
-   ```sh
-   npm install
-   npm run dev
-   ```
+Everything lives in the `fitness` schema, not `public`. PostgREST only serves schemas on
+the project's exposed list:
 
-Open http://localhost:5173, create an account, confirm the email Supabase sends, and sign in.
-Your profile and a starting weekly split (Mon Chest, Tue Shoulders & Back, Wed Deadlift,
-Thu Arms, Fri Legs, Sat Cardio & Core, Sun Rest) are created on first load — all editable
+**Dashboard → Integrations → Data API → Settings → Exposed schemas → add `fitness` → Save.**
+
+Skip this and every request fails with `PGRST106: Invalid schema: fitness`.
+
+### 3. Environment
+
+```sh
+cp .env.example .env.local
+```
+
+```sh
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<Client API key — the anon/publishable one, never the service key>
+```
+
+Both come from **Project Settings → API**. Env vars are read at startup, so restart the
+dev server after editing `.env.local`.
+
+The anon key is meant to be public — it ships inside the JavaScript bundle and is readable
+from DevTools on any deployed build. RLS is what protects the data, not the key. The
+**service key** is the one that must never appear here: it bypasses every policy.
+
+### 4. Run
+
+```sh
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 and create an account. Your profile and a seven-day plan are
+created on first load — every day starts as a rest day with no exercises, all editable
 from the Plan screen.
 
 ## Scripts
@@ -80,11 +108,44 @@ npm run lint     # oxlint
 npm run preview  # serve the production build
 ```
 
+## Deploying
+
+Static build, so anything that serves files works. On Cloudflare Pages:
+
+| Setting | Value |
+|---|---|
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| `VITE_SUPABASE_URL` | your project URL |
+| `VITE_SUPABASE_ANON_KEY` | your anon key |
+| `NODE_VERSION` | `22` |
+
+`NODE_VERSION` is not optional — Vite 8 needs a newer Node than the default build image.
+The two `VITE_` values are read at **build** time and inlined into the bundle; miss them
+and you get an app that loads but silently falls back to the local auth shim.
+
+Afterwards, point Supabase at the deployment under **Authentication → URL Configuration**:
+set **Site URL** to the deployed origin and add it to **Redirect URLs**. Confirmation and
+password-reset emails are generated against Site URL, so leaving it on `localhost:5173`
+sends production users to their own machine.
+
+`public/_redirects` handles SPA routing (`/* /index.html 200`). Without it, a refresh or a
+shared link to `/food` returns the host's 404, because that path is not a file — the app
+never boots to handle it.
+
 ## Notes
 
 - **Dates are yours, not the server's.** The client sends the calendar date and an ISO
   instant for the time eaten, so a meal at 11pm counts towards the right day wherever you are.
 - **Ticking is optimistic.** A checkbox flips immediately and rolls back if the request fails.
+- **Goals are date-scoped and carry forward.** Set one for a day or a week; any later day
+  with no goal of its own inherits the last one you set, falling back to the profile
+  defaults in Settings. Each day reports where its number came from, so a carried goal is
+  never mistaken for one you set.
+- **Sessions are snapshots.** A workout is copied from the plan the first time you open
+  that date, and never re-read — editing the plan must not rewrite a workout you already
+  logged. "Load from plan" on the workout screen re-copies deliberately, and refuses once
+  anything is ticked.
 - **Chart colours** are the `--chart-*` tokens in `src/index.css`. Both the light and dark
   sets were checked for colour-blind separation and contrast against their surface; the
   macro chart also ships a legend and a Table tab so identity is never colour-alone.
