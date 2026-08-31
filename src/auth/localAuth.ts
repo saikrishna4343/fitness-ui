@@ -14,7 +14,7 @@ const STORAGE_KEY = 'fitness-ui.local-session'
 
 type Listener = (event: string, session: Session | null) => void
 
-function buildSession(email: string, displayName: string): Session {
+function buildSession(email: string, firstName: string, lastName = ''): Session {
   const nowSeconds = Math.floor(Date.now() / 1000)
   return {
     access_token: 'local-dev-token',
@@ -33,7 +33,7 @@ function buildSession(email: string, displayName: string): Session {
       updated_at: new Date().toISOString(),
       last_sign_in_at: new Date().toISOString(),
       app_metadata: { provider: 'email', providers: ['email'] },
-      user_metadata: { display_name: displayName },
+      user_metadata: { first_name: firstName, last_name: lastName },
       identities: [],
     } as unknown as Session['user'],
   } as Session
@@ -43,13 +43,13 @@ function read(): Session | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw === null) {
-      const session = buildSession('dev@localhost', 'Dev')
+      const session = buildSession('dev@localhost', 'Dev', 'User')
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
       return session
     }
     return raw === 'null' ? null : (JSON.parse(raw) as Session)
   } catch {
-    return buildSession('dev@localhost', 'Dev')
+    return buildSession('dev@localhost', 'Dev', 'User')
   }
 }
 
@@ -101,9 +101,13 @@ export function createLocalAuth() {
       }: {
         email: string
         password: string
-        options?: { data?: { display_name?: string } }
+        options?: { data?: { first_name?: string; last_name?: string } }
       }) {
-        session = buildSession(email, options?.data?.display_name ?? 'Dev')
+        session = buildSession(
+          email,
+          options?.data?.first_name ?? 'Dev',
+          options?.data?.last_name ?? '',
+        )
         write(session)
         emit('SIGNED_IN')
         return { data: { session, user: session.user }, error: null }

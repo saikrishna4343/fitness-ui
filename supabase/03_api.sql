@@ -45,16 +45,29 @@ alter default privileges in schema fitness
 -- Replaces ProfileService.getOrCreate. The UI has no onboarding step, so a brand
 -- new user must come out of one call with usable goals -- the column defaults in
 -- 01_schema.sql supply them.
+--
+-- The name comes from the sign-up form, which stores it on the auth user's
+-- metadata (`options.data` on supabase.auth.signUp). This is the only place it
+-- crosses over into `fitness`, so a user who signed up before the profile row
+-- existed still gets their name on the first call. It is copied, not read
+-- through: Settings edits the profile columns, and those edits must win, so the
+-- backfill below only fills a name that is still null.
 create or replace function fitness.ensure_profile()
 returns fitness.user_profile
 language plpgsql
 as $$
 declare
     result fitness.user_profile;
+    -- auth.jwt(), not a read of auth.users: this function is SECURITY INVOKER and
+    -- `authenticated` has no select on that table. The claim carries the same
+    -- user_metadata the sign-up wrote.
+    meta   jsonb := coalesce(auth.jwt() -> 'user_metadata', '{}'::jsonb);
 begin
-    insert into fitness.user_profile (user_id)
-    values (auth.uid())
-    on conflict (user_id) do nothing;
+    insert into fitness.user_profile (user_id, first_name, last_name)
+    values (auth.uid(), nullif(meta ->> 'first_name', ''), nullif(meta ->> 'last_name', ''))
+    on conflict (user_id) do update
+       set first_name = coalesce(fitness.user_profile.first_name, excluded.first_name),
+           last_name  = coalesce(fitness.user_profile.last_name, excluded.last_name);
 
     select * into result from fitness.user_profile where user_id = auth.uid();
     return result;

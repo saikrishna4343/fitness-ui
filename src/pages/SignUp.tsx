@@ -11,7 +11,8 @@ import { AuthLayout } from '@/pages/Login'
 export default function SignUp() {
   const { session, signUp } = useAuth()
   const navigate = useNavigate()
-  const [displayName, setDisplayName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -31,7 +32,12 @@ export default function SignUp() {
 
     setPending(true)
     try {
-      const { needsConfirmation } = await signUp(email, password, displayName)
+      const { needsConfirmation } = await signUp(
+        email,
+        password,
+        firstName.trim(),
+        lastName.trim(),
+      )
       if (needsConfirmation) {
         setConfirmationSent(true)
       } else {
@@ -78,15 +84,27 @@ export default function SignUp() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                autoComplete="name"
-                required
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-              />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="first-name">First name</Label>
+                <Input
+                  id="first-name"
+                  autoComplete="given-name"
+                  required
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="last-name">Last name</Label>
+                <Input
+                  id="last-name"
+                  autoComplete="family-name"
+                  required
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>

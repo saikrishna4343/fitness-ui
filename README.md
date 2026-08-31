@@ -52,13 +52,24 @@ The schema, policies and functions are in `supabase/`. Run them in the Supabase 
 | Order | File | What it does |
 |---|---|---|
 | 1 | `01_schema.sql` | Tables |
-| 2 | `03_api.sql` | Read functions, grants, check constraints |
-| 3 | `06_api_writes.sql` | Write functions: status transitions, `order_index` maintenance |
-| 4 | `02_row_level_security.sql` | **Last.** Policies |
+| 2 | `08_audit_columns.sql` | `status` and the created/updated by-and-when columns, on every table |
+| 3 | `09_indexes.sql` | Indexes for the paths `01_schema.sql` did not cover |
+| 4 | `03_api.sql` | Read functions, grants, check constraints |
+| 5 | `06_api_writes.sql` | Write functions: status transitions, `order_index` maintenance |
+| 6 | `02_row_level_security.sql` | **Last.** Policies |
+
+`08_audit_columns.sql` is also re-runnable on its own: it finds every table in the schema,
+so a table added later picks up the same five columns and the same trigger by running it
+again. Nothing else in the schema lists those columns.
 
 Row level security goes last on purpose. Every policy tests `auth.uid()`; applied before
 the browser is sending a real JWT, that is null, every policy evaluates false, and every
 table looks empty. It reads exactly like the database was wiped.
+
+`supabase/07_split_display_name.sql` is not part of setup either. It replaces the old
+single `display_name` column with `first_name` / `last_name` on a database created before
+that split, backfilling the existing names. Run it once, then re-run `03_api.sql`. A fresh
+install gets both columns from `01_schema.sql` and must skip it.
 
 `supabase/05_adopt_dev_data.sql` is not part of setup. It is a one-time migration kept for
 reference, from when this app ran behind a Spring Boot service that hardcoded a single dev

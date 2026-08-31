@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { fullName } from '@/lib/format'
 import type { Profile } from '@/types/api'
 
 const GOALS = [
@@ -55,7 +56,8 @@ function ProfileForm({ profile }: { profile: Profile }) {
     event.preventDefault()
     update.mutate(
       {
-        displayName: form.displayName,
+        firstName: form.firstName,
+        lastName: form.lastName,
         sex: form.sex,
         heightCm: form.heightCm,
         weightKg: form.weightKg,
@@ -84,13 +86,29 @@ function ProfileForm({ profile }: { profile: Profile }) {
       <CardContent>
         <form onSubmit={onSubmit} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Name" htmlFor="display-name">
+            <Field label="First name" htmlFor="first-name">
               <Input
-                id="display-name"
-                value={form.displayName ?? ''}
-                onChange={(event) => set('displayName', event.target.value)}
+                id="first-name"
+                autoComplete="given-name"
+                value={form.firstName ?? ''}
+                onChange={(event) => set('firstName', event.target.value)}
               />
             </Field>
+            <Field label="Last name" htmlFor="last-name">
+              <Input
+                id="last-name"
+                autoComplete="family-name"
+                value={form.lastName ?? ''}
+                onChange={(event) => set('lastName', event.target.value)}
+              />
+            </Field>
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Shown around the app as{' '}
+              <span className="font-medium text-foreground">
+                {fullName(form.firstName, form.lastName) ?? 'Signed in'}
+              </span>
+              {' '}in the sidebar. The dashboard greets you by first name.
+            </p>
             <Field label="Sex" htmlFor="sex">
               <Input
                 id="sex"

@@ -96,7 +96,8 @@ function invalidateGoals(client: ReturnType<typeof useQueryClient>) {
 
 type ProfileRow = {
   user_id: string
-  display_name: string | null
+  first_name: string | null
+  last_name: string | null
   sex: string | null
   height_cm: number | null
   weight_kg: number | null
@@ -131,7 +132,8 @@ type SummaryRow = {
 
 const toProfile = (r: ProfileRow): Profile => ({
   userId: r.user_id,
-  displayName: r.display_name,
+  firstName: r.first_name,
+  lastName: r.last_name,
   sex: r.sex,
   heightCm: r.height_cm,
   weightKg: r.weight_kg,
@@ -212,7 +214,8 @@ export function useUpdateProfile() {
   return useMutation({
     mutationFn: async (body: UpdateProfileRequest) => {
       const patch: Record<string, unknown> = {}
-      if (body.displayName !== undefined) patch.display_name = body.displayName
+      if (body.firstName !== undefined) patch.first_name = body.firstName
+      if (body.lastName !== undefined) patch.last_name = body.lastName
       if (body.sex !== undefined) patch.sex = body.sex
       if (body.heightCm !== undefined) patch.height_cm = body.heightCm
       if (body.weightKg !== undefined) patch.weight_kg = body.weightKg

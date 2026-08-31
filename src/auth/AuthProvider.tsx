@@ -6,7 +6,12 @@ interface AuthContextValue {
   session: Session | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, displayName: string) => Promise<{ needsConfirmation: boolean }>
+  signUp: (
+    email: string,
+    password: string,
+    firstName: string,
+    lastName: string,
+  ) => Promise<{ needsConfirmation: boolean }>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
 }
@@ -37,11 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw new Error(error.message)
       },
-      async signUp(email, password, displayName) {
+      async signUp(email, password, firstName, lastName) {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { display_name: displayName } },
+          // The name lives on the auth user until fitness.ensure_profile() copies
+          // it onto the profile row on the first authenticated call.
+          options: { data: { first_name: firstName, last_name: lastName } },
         })
         if (error) throw new Error(error.message)
         // With email confirmation on, Supabase returns a user but no session.

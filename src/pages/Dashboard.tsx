@@ -25,11 +25,14 @@ export default function Dashboard() {
   const { data: entries = [] } = useFoodEntries(isoDate)
 
   const recent = [...entries].reverse().slice(0, 5)
+  // First name only -- the sidebar carries the full name. Falls back to 'Today'
+  // until the profile loads, so the header never flashes a bare "Hi,".
+  const greeting = profile?.firstName?.trim()
 
   return (
     <>
       <PageHeader
-        title={profile?.displayName ? `Hi, ${profile.displayName}` : 'Today'}
+        title={greeting ? `Hi, ${greeting}` : 'Today'}
         description={new Date().toLocaleDateString(undefined, {
           weekday: 'long',
           day: 'numeric',
