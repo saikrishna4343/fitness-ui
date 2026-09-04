@@ -176,8 +176,9 @@ the right way to get the same behaviour.
   synthesis: 3-2-1 through the last three seconds of every interval, then "start" going
   into an exercise and "rest easy" coming out of one. A Web Audio beep lands on each
   boundary ahead of the words — speech volume is capped at 1 by the platform, so the tone
-  is the part that carries across a room. Pick the voice, its speed and the beep level on
-  the setup screen; the list of voices is whatever the browser on that device offers.
+  is the part that carries across a room. The voice is Google UK English Male wherever
+  the browser has it. Pick a different one, its speed and the beep level on the setup
+  screen; the list is whatever that device offers.
 - **Chart colours** are the `--chart-*` tokens in `src/index.css`. Both the light and dark
   sets were checked for colour-blind separation and contrast against their surface; the
   macro chart also ships a legend and a Table tab so identity is never colour-alone.

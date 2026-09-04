@@ -40,6 +40,16 @@ export const speechSupported: boolean =
 
 // ------------------------------------------------------------------ voices
 
+/**
+ * The voice "Best available" means, when the device has it.
+ *
+ * Named outright rather than left to the heuristic below: this one was picked by ear for
+ * these cues, and scoring alone would hand the slot to whatever the platform happens to
+ * call premium this year. Chrome ships it and needs a connection to speak it; anywhere it
+ * is missing, the ranking takes over.
+ */
+export const PREFERRED_VOICE = 'Google UK English Male'
+
 const GOOD = /natural|neural|premium|enhanced|siri|google|online/i
 const POOR = /espeak|compact|eloquence|novelty|whisper|zarvox|albert|bad news|bells/i
 const NAMED = /samantha|daniel|karen|moira|serena|aria|guy|jenny|libby|sonia|ryan|nathan/i
@@ -63,16 +73,21 @@ function score(voice: SpeechSynthesisVoice): number {
   return points
 }
 
-/** English first, best-sounding first, everything else after. */
+/** The named default first, then this device's language, then the rest of English. */
 export function rankedVoices(): SpeechSynthesisVoice[] {
   if (!speechSupported) return []
-  const preferred = navigator.language?.slice(0, 2).toLowerCase() ?? 'en'
+  const local = navigator.language?.slice(0, 2).toLowerCase() ?? 'en'
+
+  // en-GB would otherwise sort behind en-US on an American machine, which is exactly
+  // where the named default would go missing.
+  const rank = (voice: SpeechSynthesisVoice) => {
+    if (voice.name === PREFERRED_VOICE) return -1
+    const lang = voice.lang.slice(0, 2).toLowerCase()
+    return lang === local ? 0 : lang === 'en' ? 1 : 2
+  }
 
   return window.speechSynthesis.getVoices().slice().sort((a, b) => {
-    const aLang = a.lang.slice(0, 2).toLowerCase()
-    const bLang = b.lang.slice(0, 2).toLowerCase()
-    const rank = (lang: string) => (lang === preferred ? 0 : lang === 'en' ? 1 : 2)
-    if (rank(aLang) !== rank(bLang)) return rank(aLang) - rank(bLang)
+    if (rank(a) !== rank(b)) return rank(a) - rank(b)
     if (score(a) !== score(b)) return score(b) - score(a)
     return a.name.localeCompare(b.name)
   })
@@ -92,7 +107,8 @@ export function resolveVoice(voiceURI: string | null): SpeechSynthesisVoice | nu
   const voices = rankedVoices()
   if (voices.length === 0) return null
   // A saved voice can vanish: a different browser, or a cloud voice while offline.
-  // Falling back to the best available beats going silent.
+  // Falling back to the best available beats going silent, and `rankedVoices` already
+  // puts PREFERRED_VOICE first when this device has it.
   return voices.find((voice) => voice.voiceURI === voiceURI) ?? voices[0]
 }
 

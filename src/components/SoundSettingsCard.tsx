@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
+  PREFERRED_VOICE,
   primeAudio,
   say,
   speechSupported,
@@ -55,8 +56,9 @@ export function SoundSettingsCard({
       <CardHeader className="pb-3">
         <h2 className="text-base font-semibold">Voice and sound</h2>
         <p className="text-sm text-muted-foreground">
-          A beep lands on the beat and the voice follows it. Voices come from your
-          browser, so the list differs between your phone and this machine.
+          A beep lands on the beat and the voice follows it. {PREFERRED_VOICE} is used
+          wherever it is installed; voices come from the browser, so the list differs
+          between your phone and this machine.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -75,7 +77,7 @@ export function SoundSettingsCard({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={AUTO}>Best available</SelectItem>
+                <SelectItem value={AUTO}>Best available ({PREFERRED_VOICE})</SelectItem>
                 {voices.map((voice) => (
                   <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
                     {voiceLabel(voice)}

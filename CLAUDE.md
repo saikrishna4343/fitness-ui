@@ -112,8 +112,10 @@ outlives deploys and a NaN would hang the clock on one phase forever.
   have real gain. `primeAudio()` must be called inside the user gesture that starts a
   session — iOS stays silent for the first cue otherwise, and an AudioContext built outside
   a gesture stays suspended — which is why both the page's Start button and the runner's
-  call it. Voices are ranked by name (`natural`/`neural`/`premium` up, `espeak`/`compact`
-  down) because the API exposes no quality field; the user's pick and the beep level live
+  call it. "Best available" is `PREFERRED_VOICE`, named outright — Google UK English
+  Male, which Chrome ships and speaks over the network. Everything after it is ranked by
+  name (`natural`/`neural`/`premium` up, `espeak`/`compact` down) because the API exposes
+  no quality field; the user's pick and the beep level live
   under their own localStorage key so a Reset of the intervals does not clear them.
 - The plan is frozen in a `useMemo` for the length of a session; editing mid-workout must
   not move phase boundaries under a running clock.
