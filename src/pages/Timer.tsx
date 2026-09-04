@@ -1,7 +1,12 @@
 import { Download, History, Play, RotateCcw, Timer as TimerIcon, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { useWorkout } from '@/api/hooks'
+import {
+  useAddSessionExercise,
+  useCompleteWorkout,
+  useUpdateWorkout,
+  useWorkout,
+} from '@/api/hooks'
 import { PageHeader } from '@/components/AppShell'
 import { IntervalPlanEditor } from '@/components/IntervalPlanEditor'
 import { IntervalRunner } from '@/components/IntervalRunner'
@@ -40,10 +45,24 @@ export default function Timer() {
 
   const today = toIsoDate(new Date())
   const { data: workout } = useWorkout(today)
+  const addExercise = useAddSessionExercise(today)
+  const updateWorkout = useUpdateWorkout(today)
+  const completeWorkout = useCompleteWorkout(today)
+
+  // Set only when this timer filled an empty day. Finishing completes that workout and
+  // nothing else: a session run alongside a real workout has not done that workout.
+  const [linkedWorkoutId, setLinkedWorkoutId] = useState<string | null>(null)
 
   const plan = useMemo(() => buildPlan(config), [config])
   const totals = countWork(config)
   const empty = plan.totalSeconds === 0
+  /** Nothing planned for today, so the timer is the workout. */
+  const adopts = !empty && workout != null && workout.exercises.length === 0
+  /** Distinct exercises, which is what today's workout gets — not one row per round. */
+  const adoptCount = config.groups.reduce(
+    (total, group) => (group.rounds > 0 ? total + group.exercises.length : total),
+    0,
+  )
 
   function loadFromWorkout() {
     if (!workout || workout.exercises.length === 0) return
@@ -67,6 +86,62 @@ export default function Timer() {
     toast.success(`Added ${workout.exercises.length} exercises from today's workout`)
   }
 
+  /**
+   * Copies the intervals into today's workout when the day is empty.
+   *
+   * One session exercise per interval, not one per round: rounds are the sets, so a
+   * group run 3 times becomes an exercise with a target of 3 sets. Reps hold the work
+   * time, because that is what a rep is here.
+   *
+   * Deliberately not awaited by the caller — the countdown starts on the click, and
+   * waiting on a handful of round trips would leave the first exercise underway before
+   * the screen moved.
+   */
+  async function fillTodaysWorkout(): Promise<string | null> {
+    if (!workout || !adopts) return null
+    const groups = config.groups.filter((group) => group.exercises.length > 0 && group.rounds > 0)
+    if (groups.length === 0) return null
+
+    try {
+      if (workout.restDay) {
+        // A rest day holding exercises reads as a bug on the workout screen, and the
+        // focus moves with it for the same reason it does over there.
+        await updateWorkout.mutateAsync({
+          id: workout.id,
+          body: { restDay: false, focus: 'Interval training' },
+        })
+      }
+
+      // Sequential: order_index is assigned from what is already there, so racing these
+      // would shuffle the exercises against the order you built them in.
+      for (const group of groups) {
+        for (const exercise of group.exercises) {
+          await addExercise.mutateAsync({
+            id: workout.id,
+            body: {
+              name: exercise.name.trim() || 'Exercise',
+              targetSets: group.rounds,
+              targetReps: `${exercise.seconds}s`,
+              notes: groups.length > 1 ? group.name : null,
+            },
+          })
+        }
+      }
+
+      toast.success(
+        `Added ${adoptCount} ${adoptCount === 1 ? 'exercise' : 'exercises'} to today's workout`,
+      )
+      return workout.id
+    } catch (error) {
+      // The workout not filling in is not a reason to stop the session that is already
+      // counting down.
+      toast.error(
+        error instanceof Error ? error.message : `Could not fill in today's workout`,
+      )
+      return null
+    }
+  }
+
   function begin(from = 0) {
     // Inside the click, so iOS lets the first countdown play.
     primeAudio()
@@ -74,6 +149,16 @@ export default function Timer() {
     setUnfinished(null)
     setResumeAt(from)
     setRunning(true)
+    if (from === 0) void fillTodaysWorkout().then(setLinkedWorkoutId)
+  }
+
+  /** The session ran to the end, so the workout it stood in for is done. */
+  function finished() {
+    if (!linkedWorkoutId) return
+    completeWorkout.mutate(linkedWorkoutId, {
+      onSuccess: () => toast.success(`Today's workout is marked complete`),
+      onError: (error) => toast.error(error.message),
+    })
   }
 
   function discard() {
@@ -88,6 +173,9 @@ export default function Timer() {
     // screen describing a workout other than the one counting down.
     setConfig(unfinished.config)
     setUnfinished(null)
+    // Restored before the session resumes, so finishing still completes the workout it
+    // adopted before the reload.
+    setLinkedWorkoutId(unfinished.linkedWorkoutId)
     begin(unfinished.elapsed)
   }
 
@@ -100,6 +188,8 @@ export default function Timer() {
           sound={sound}
           autoStart
           resumeAt={resumeAt}
+          linkedWorkoutId={linkedWorkoutId}
+          onFinished={finished}
           onExit={() => setRunning(false)}
         />
       </>
@@ -161,6 +251,14 @@ export default function Timer() {
         </Card>
 
         {unfinished && <ResumeCard session={unfinished} onResume={resume} onDiscard={discard} />}
+
+        {adopts && (
+          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            Nothing is planned for today. Starting this adds {adoptCount}{' '}
+            {adoptCount === 1 ? 'exercise' : 'exercises'} to today&apos;s workout, and running
+            the session to the end marks it complete.
+          </p>
+        )}
 
         {empty && (
           <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">

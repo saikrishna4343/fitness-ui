@@ -157,6 +157,11 @@ export interface SavedSession {
   config: TimerConfig
   elapsed: number
   savedAt: number
+  /**
+   * The workout session this timer filled in, when today had nothing planned. Kept in
+   * the snapshot so a session resumed after a reload can still mark it complete.
+   */
+  linkedWorkoutId: string | null
 }
 
 /**
@@ -197,7 +202,13 @@ export function loadSession(): SavedSession | null {
     const config = parse(source.config)
     if (!config || config.groups.length === 0) return null
 
-    return { config, elapsed, savedAt }
+    return {
+      config,
+      elapsed,
+      savedAt,
+      linkedWorkoutId:
+        typeof source.linkedWorkoutId === 'string' ? source.linkedWorkoutId : null,
+    }
   } catch {
     return null
   }

@@ -179,6 +179,11 @@ the right way to get the same behaviour.
   is the part that carries across a room. The voice is Google UK English Male wherever
   the browser has it. Pick a different one, its speed and the beep level on the setup
   screen; the list is whatever that device offers.
+- **On an empty day, the timer is the workout.** Start a session with nothing planned for
+  today and the intervals are copied into today's workout — rounds become the target sets,
+  the work time becomes the reps — and running the session to the end marks that workout
+  complete. A day that already has exercises is left alone: a ten-minute interval session
+  is not proof you did the eight lifts you had planned.
 - **A reloaded timer picks up where it was.** A running session is snapshotted every
   second, and comes back paused behind a Resume card rather than counting down at someone
   who has just reloaded the page. Stopping deliberately clears it; so does finishing.

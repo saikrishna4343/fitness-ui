@@ -47,6 +47,8 @@ export function IntervalRunner({
   sound: settings,
   autoStart = false,
   resumeAt = 0,
+  linkedWorkoutId = null,
+  onFinished,
   onExit,
 }: {
   config: TimerConfig
@@ -55,6 +57,10 @@ export function IntervalRunner({
   autoStart?: boolean
   /** Seconds into the session to pick up from, after a reload. */
   resumeAt?: number
+  /** The workout this session is standing in for, if it filled an empty day. */
+  linkedWorkoutId?: string | null
+  /** Fired once, when the last phase runs out. */
+  onFinished?: () => void
   onExit: () => void
 }) {
   const [sound, setSound] = useState(true)
@@ -62,10 +68,14 @@ export function IntervalRunner({
   // so they read these through a ref instead of closing over stale values.
   const soundRef = useRef(true)
   const settingsRef = useRef(settings)
+  // Held in a ref for the same reason as the cues: the timer keeps the callback it was
+  // given, and re-creating it on every render would restart the clock.
+  const finishedRef = useRef(onFinished)
   useEffect(() => {
     soundRef.current = sound
     settingsRef.current = settings
-  }, [sound, settings])
+    finishedRef.current = onFinished
+  }, [sound, settings, onFinished])
 
   // Frozen for the length of the session: rebuilding it from an edit made mid-workout
   // would move every phase boundary under the running clock.
@@ -96,6 +106,7 @@ export function IntervalRunner({
       cue('finish', 'Session complete. Well done.')
       // Nothing left to come back to.
       clearSession()
+      finishedRef.current?.()
     }, [cue]),
   })
 
@@ -140,8 +151,8 @@ export function IntervalRunner({
     const second = Math.floor(elapsed)
     if (second === savedSecond.current) return
     savedSecond.current = second
-    saveSession({ config, elapsed, savedAt: Date.now() })
-  }, [config, elapsed, timerStatus])
+    saveSession({ config, elapsed, savedAt: Date.now(), linkedWorkoutId })
+  }, [config, elapsed, linkedWorkoutId, timerStatus])
 
   function stop() {
     stopSpeaking()
