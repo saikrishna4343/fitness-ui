@@ -5,20 +5,31 @@ import { useWorkout } from '@/api/hooks'
 import { PageHeader } from '@/components/AppShell'
 import { IntervalPlanEditor } from '@/components/IntervalPlanEditor'
 import { IntervalRunner } from '@/components/IntervalRunner'
+import { SoundSettingsCard } from '@/components/SoundSettingsCard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { toIsoDate } from '@/lib/format'
 import { buildPlan, countWork, mmss } from '@/lib/intervalPlan'
-import { unlockSpeech } from '@/lib/speech'
-import { defaultConfig, loadConfig, newExercise, newId, saveConfig } from '@/lib/timerStorage'
+import { primeAudio, type SoundSettings } from '@/lib/speech'
+import {
+  defaultConfig,
+  loadConfig,
+  loadSound,
+  newExercise,
+  newId,
+  saveConfig,
+  saveSound,
+} from '@/lib/timerStorage'
 import type { TimerConfig } from '@/types/timer'
 
 export default function Timer() {
   // Read once, on the first render: a later read would fight whatever is being typed.
   const [config, setConfig] = useState<TimerConfig>(loadConfig)
+  const [sound, setSound] = useState<SoundSettings>(loadSound)
   const [running, setRunning] = useState(false)
 
   useEffect(() => saveConfig(config), [config])
+  useEffect(() => saveSound(sound), [sound])
 
   const today = toIsoDate(new Date())
   const { data: workout } = useWorkout(today)
@@ -53,7 +64,7 @@ export default function Timer() {
     return (
       <>
         <PageHeader title="Interval timer" description="Eyes off the screen — the voice calls it." />
-        <IntervalRunner config={config} autoStart onExit={() => setRunning(false)} />
+        <IntervalRunner config={config} sound={sound} autoStart onExit={() => setRunning(false)} />
       </>
     )
   }
@@ -104,8 +115,8 @@ export default function Timer() {
                 className="gap-2"
                 disabled={empty}
                 onClick={() => {
-                  // Inside the click, so iOS lets the first countdown speak.
-                  unlockSpeech()
+                  // Inside the click, so iOS lets the first countdown play.
+                  primeAudio()
                   setRunning(true)
                 }}
               >
@@ -121,6 +132,8 @@ export default function Timer() {
             Add at least one exercise to a group before starting.
           </p>
         )}
+
+        <SoundSettingsCard settings={sound} onChange={setSound} />
 
         <IntervalPlanEditor config={config} onChange={setConfig} />
       </div>

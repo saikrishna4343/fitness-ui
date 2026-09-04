@@ -1,6 +1,8 @@
+import { defaultSound, type BeepLevel, type SoundSettings } from '@/lib/speech'
 import type { IntervalExercise, IntervalGroup, TimerConfig } from '@/types/timer'
 
 const KEY = 'fitness-ui:interval-timer'
+const SOUND_KEY = 'fitness-ui:interval-timer-sound'
 
 export function newId(): string {
   return crypto.randomUUID()
@@ -104,5 +106,44 @@ export function saveConfig(config: TimerConfig): void {
     localStorage.setItem(KEY, JSON.stringify(config))
   } catch {
     /* nothing to do — the timer still runs from memory */
+  }
+}
+
+// ------------------------------------------------------------------ sound
+
+const BEEP_LEVELS: BeepLevel[] = ['off', 'normal', 'loud']
+
+/**
+ * Kept apart from the config: which voice sounds good is a property of the device you
+ * are holding, not of the workout, so it survives a Reset of the intervals.
+ */
+export function loadSound(): SoundSettings {
+  try {
+    const raw = localStorage.getItem(SOUND_KEY)
+    if (!raw) return defaultSound
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return defaultSound
+    const source = parsed as Record<string, unknown>
+
+    return {
+      voiceURI: typeof source.voiceURI === 'string' ? source.voiceURI : null,
+      rate:
+        typeof source.rate === 'number' && Number.isFinite(source.rate)
+          ? Math.min(2, Math.max(0.5, source.rate))
+          : defaultSound.rate,
+      beeps: BEEP_LEVELS.includes(source.beeps as BeepLevel)
+        ? (source.beeps as BeepLevel)
+        : defaultSound.beeps,
+    }
+  } catch {
+    return defaultSound
+  }
+}
+
+export function saveSound(settings: SoundSettings): void {
+  try {
+    localStorage.setItem(SOUND_KEY, JSON.stringify(settings))
+  } catch {
+    /* nothing to do */
   }
 }

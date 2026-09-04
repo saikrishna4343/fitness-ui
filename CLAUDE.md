@@ -107,9 +107,14 @@ outlives deploys and a NaN would hang the clock on one phase forever.
   apart over a long session. Voice cues fire from the sampled tick (guarded by refs so a
   re-render cannot repeat one), not from a render effect. It also holds a screen wake lock
   while running, re-acquired on `visibilitychange`.
-- `src/lib/speech.ts` wraps `speechSynthesis`. `unlockSpeech()` must be called inside the
-  user gesture that starts a session — iOS stays silent for the first cue otherwise, which
-  is why both the page's Start button and the runner's call it.
+- `src/lib/speech.ts` drives two outputs. Speech says what is happening; utterance volume
+  is capped at 1 by the platform, so loudness comes from the Web Audio tones instead, which
+  have real gain. `primeAudio()` must be called inside the user gesture that starts a
+  session — iOS stays silent for the first cue otherwise, and an AudioContext built outside
+  a gesture stays suspended — which is why both the page's Start button and the runner's
+  call it. Voices are ranked by name (`natural`/`neural`/`premium` up, `espeak`/`compact`
+  down) because the API exposes no quality field; the user's pick and the beep level live
+  under their own localStorage key so a Reset of the intervals does not clear them.
 - The plan is frozen in a `useMemo` for the length of a session; editing mid-workout must
   not move phase boundaries under a running clock.
 

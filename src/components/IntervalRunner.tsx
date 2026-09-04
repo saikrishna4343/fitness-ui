@@ -5,13 +5,21 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { buildPlan, mmss } from '@/lib/intervalPlan'
-import { say, stopSpeaking, unlockSpeech, speechSupported } from '@/lib/speech'
+import {
+  primeAudio,
+  say,
+  speechSupported,
+  stopSpeaking,
+  tone,
+  type Cue,
+  type SoundSettings,
+} from '@/lib/speech'
 import { useIntervalTimer } from '@/lib/useIntervalTimer'
 import { cn } from '@/lib/utils'
 import { PHASE_LABELS, type Phase, type TimerConfig } from '@/types/timer'
 
 /** Work reads as the loud state; every kind of rest shares the quiet one. */
-function tone(phase: Phase | null) {
+function palette(phase: Phase | null) {
   if (!phase) return { card: 'border-border', accent: 'text-foreground' }
   if (phase.kind === 'WORK') {
     return { card: 'border-primary/50 bg-primary/5', accent: 'text-primary' }
@@ -30,42 +38,63 @@ function entryCue(phase: Phase): string {
   return 'Rest easy'
 }
 
+/** Spelled out: engines read a bare digit inconsistently, and "1" often clips to a blip. */
+const COUNT_WORDS: Record<number, string> = { 3: 'Three', 2: 'Two', 1: 'One' }
+
 export function IntervalRunner({
   config,
+  sound: settings,
   autoStart = false,
   onExit,
 }: {
   config: TimerConfig
+  sound: SoundSettings
   /** Set when the click that mounted this was itself the Start button. */
   autoStart?: boolean
   onExit: () => void
 }) {
   const [sound, setSound] = useState(true)
   // The cue callbacks are handed to the timer once and then live inside its interval,
-  // so they read the toggle through a ref instead of closing over a stale value.
+  // so they read these through a ref instead of closing over stale values.
   const soundRef = useRef(true)
+  const settingsRef = useRef(settings)
   useEffect(() => {
     soundRef.current = sound
-  }, [sound])
+    settingsRef.current = settings
+  }, [sound, settings])
 
   // Frozen for the length of the session: rebuilding it from an edit made mid-workout
   // would move every phase boundary under the running clock.
   const plan = useMemo(() => buildPlan(config), [config])
 
-  const speak = useCallback((text: string) => {
-    if (soundRef.current) say(text)
+  /**
+   * The beep goes first and the words follow it.
+   *
+   * Speech synthesis has no volume above 1, so the tone is what carries the cue across a
+   * room; the voice is there to say which exercise it was.
+   */
+  const cue = useCallback((sounded: Cue, text: string) => {
+    if (!soundRef.current) return
+    tone(sounded, settingsRef.current.beeps)
+    say(text, settingsRef.current)
   }, [])
 
   const timer = useIntervalTimer(plan, {
-    onCount: useCallback((secondsLeft: number) => speak(String(secondsLeft)), [speak]),
-    onEnter: useCallback((phase: Phase) => speak(entryCue(phase)), [speak]),
-    onFinish: useCallback(() => speak('Session complete. Well done.'), [speak]),
+    onCount: useCallback(
+      (secondsLeft: number) => cue('tick', COUNT_WORDS[secondsLeft] ?? String(secondsLeft)),
+      [cue],
+    ),
+    onEnter: useCallback(
+      (phase: Phase) => cue(phase.kind === 'WORK' ? 'work' : 'rest', entryCue(phase)),
+      [cue],
+    ),
+    onFinish: useCallback(() => cue('finish', 'Session complete. Well done.'), [cue]),
   })
 
   const { phase, nextPhase, secondsLeft, status } = timer
   const running = status === 'RUNNING'
   const finished = status === 'FINISHED'
-  const colors = tone(phase)
+  const colors = palette(phase)
 
   const phaseElapsed = phase ? phase.seconds - secondsLeft : 0
   const roundsAfterThis = phase?.round && phase.rounds ? phase.rounds - phase.round : 0
@@ -74,7 +103,7 @@ export function IntervalRunner({
 
   function begin() {
     // Must happen inside the click, before any cue — see the note in speech.ts.
-    if (sound) unlockSpeech()
+    if (sound) primeAudio()
     timer.start()
   }
 
@@ -111,14 +140,13 @@ export function IntervalRunner({
                 variant="ghost"
                 size="icon"
                 className="size-8"
-                disabled={!speechSupported}
-                aria-label={sound ? 'Mute the voice cues' : 'Unmute the voice cues'}
+                aria-label={sound ? 'Mute the cues' : 'Unmute the cues'}
                 onClick={() => {
                   if (sound) stopSpeaking()
                   setSound((on) => !on)
                 }}
               >
-                {sound && speechSupported ? (
+                {sound ? (
                   <Volume2 className="size-4" />
                 ) : (
                   <VolumeX className="size-4" />
@@ -259,7 +287,7 @@ export function IntervalRunner({
 
       {!speechSupported && (
         <p className="text-center text-xs text-muted-foreground">
-          This browser has no speech synthesis, so the countdown is silent.
+          This browser has no speech synthesis, so the countdown beeps without speaking.
         </p>
       )}
     </div>
