@@ -162,6 +162,23 @@ export function useIntervalTimer(plan: IntervalPlan, cues: TimerCues) {
 
   const pause = useCallback(() => setStatus('PAUSED'), [])
 
+  /**
+   * Picks a session back up part-way through, held at the pause.
+   *
+   * Deliberately not running: this is reached by reloading the page, and someone who
+   * has just come back to a tab should not have three seconds counted off while they
+   * work out where they were.
+   */
+  const resumeAt = useCallback(
+    (seconds: number) => {
+      if (seconds <= 0 || seconds >= planRef.current.totalSeconds) return
+      seek(seconds)
+      phaseRef.current = -1
+      setStatus('PAUSED')
+    },
+    [seek],
+  )
+
   const reset = useCallback(() => {
     apply(0)
     phaseRef.current = -1
@@ -200,6 +217,7 @@ export function useIntervalTimer(plan: IntervalPlan, cues: TimerCues) {
     start,
     pause,
     resume,
+    resumeAt,
     reset,
     skip,
     back,

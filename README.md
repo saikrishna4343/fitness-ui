@@ -179,6 +179,9 @@ the right way to get the same behaviour.
   is the part that carries across a room. The voice is Google UK English Male wherever
   the browser has it. Pick a different one, its speed and the beep level on the setup
   screen; the list is whatever that device offers.
+- **A reloaded timer picks up where it was.** A running session is snapshotted every
+  second, and comes back paused behind a Resume card rather than counting down at someone
+  who has just reloaded the page. Stopping deliberately clears it; so does finishing.
 - **Chart colours** are the `--chart-*` tokens in `src/index.css`. Both the light and dark
   sets were checked for colour-blind separation and contrast against their surface; the
   macro chart also ships a legend and a Table tab so identity is never colour-alone.

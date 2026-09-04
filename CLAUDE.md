@@ -119,6 +119,12 @@ outlives deploys and a NaN would hang the clock on one phase forever.
   under their own localStorage key so a Reset of the intervals does not clear them.
 - The plan is frozen in a `useMemo` for the length of a session; editing mid-workout must
   not move phase boundaries under a running clock.
+- A running session snapshots `{config, elapsed}` to localStorage once a second, so a
+  reload or a discarded background tab costs at most one second. It comes back **paused**
+  at that point behind a Resume card, never running — the page has just reloaded and
+  nobody is mid-burpee. The snapshot stores the config the session started with, expires
+  after 6 hours, and is cleared on finish and on an explicit Stop (a decision, unlike an
+  interruption).
 
 ### Frontend conventions
 

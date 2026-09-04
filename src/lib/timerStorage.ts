@@ -3,6 +3,7 @@ import type { IntervalExercise, IntervalGroup, TimerConfig } from '@/types/timer
 
 const KEY = 'fitness-ui:interval-timer'
 const SOUND_KEY = 'fitness-ui:interval-timer-sound'
+const SESSION_KEY = 'fitness-ui:interval-timer-session'
 
 export function newId(): string {
   return crypto.randomUUID()
@@ -145,5 +146,59 @@ export function saveSound(settings: SoundSettings): void {
     localStorage.setItem(SOUND_KEY, JSON.stringify(settings))
   } catch {
     /* nothing to do */
+  }
+}
+
+// ------------------------------------------------------------------ session
+
+/** Where a running session had got to, so a reload does not throw the workout away. */
+export interface SavedSession {
+  /** The config the session was started with, not whatever the editor holds now. */
+  config: TimerConfig
+  elapsed: number
+  savedAt: number
+}
+
+/**
+ * How long a snapshot is worth offering. Past this it is yesterday's workout, and
+ * resuming into the middle of it would be stranger than starting again.
+ */
+const SESSION_TTL_MS = 6 * 60 * 60 * 1000
+
+export function saveSession(session: SavedSession): void {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+  } catch {
+    /* nothing to do — the session still runs, it just will not survive a reload */
+  }
+}
+
+export function clearSession(): void {
+  try {
+    localStorage.removeItem(SESSION_KEY)
+  } catch {
+    /* nothing to do */
+  }
+}
+
+export function loadSession(): SavedSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const source = parsed as Record<string, unknown>
+
+    const elapsed = typeof source.elapsed === 'number' ? source.elapsed : 0
+    const savedAt = typeof source.savedAt === 'number' ? source.savedAt : 0
+    if (elapsed <= 0 || Date.now() - savedAt > SESSION_TTL_MS) return null
+
+    // Same validation as the editor config: this JSON outlives deploys too.
+    const config = parse(source.config)
+    if (!config || config.groups.length === 0) return null
+
+    return { config, elapsed, savedAt }
+  } catch {
+    return null
   }
 }

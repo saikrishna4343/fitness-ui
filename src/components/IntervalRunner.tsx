@@ -14,6 +14,7 @@ import {
   type Cue,
   type SoundSettings,
 } from '@/lib/speech'
+import { clearSession, saveSession } from '@/lib/timerStorage'
 import { useIntervalTimer } from '@/lib/useIntervalTimer'
 import { cn } from '@/lib/utils'
 import { PHASE_LABELS, type Phase, type TimerConfig } from '@/types/timer'
@@ -45,12 +46,15 @@ export function IntervalRunner({
   config,
   sound: settings,
   autoStart = false,
+  resumeAt = 0,
   onExit,
 }: {
   config: TimerConfig
   sound: SoundSettings
   /** Set when the click that mounted this was itself the Start button. */
   autoStart?: boolean
+  /** Seconds into the session to pick up from, after a reload. */
+  resumeAt?: number
   onExit: () => void
 }) {
   const [sound, setSound] = useState(true)
@@ -88,7 +92,11 @@ export function IntervalRunner({
       (phase: Phase) => cue(phase.kind === 'WORK' ? 'work' : 'rest', entryCue(phase)),
       [cue],
     ),
-    onFinish: useCallback(() => cue('finish', 'Session complete. Well done.'), [cue]),
+    onFinish: useCallback(() => {
+      cue('finish', 'Session complete. Well done.')
+      // Nothing left to come back to.
+      clearSession()
+    }, [cue]),
   })
 
   const { phase, nextPhase, secondsLeft, status } = timer
@@ -111,15 +119,35 @@ export function IntervalRunner({
   // rather than making anyone press Start twice. The ref survives StrictMode's second
   // pass, which would otherwise restart a session already a few seconds in.
   const started = useRef(false)
-  const start = timer.start
+  const { start, resumeAt: pickUpAt } = timer
   useEffect(() => {
     if (!autoStart || started.current) return
     started.current = true
-    start()
-  }, [autoStart, start])
+    if (resumeAt > 0) pickUpAt(resumeAt)
+    else start()
+  }, [autoStart, resumeAt, start, pickUpAt])
+
+  /**
+   * A snapshot every whole second, so closing the tab, a refresh or a browser deciding
+   * to discard the page in the background costs at most the second you were in. Written
+   * on the second rather than every tick: this is localStorage, ten writes a second for
+   * a 20-minute session is a lot of churn for no extra fidelity.
+   */
+  const savedSecond = useRef(-1)
+  const { elapsed, status: timerStatus } = timer
+  useEffect(() => {
+    if (timerStatus !== 'RUNNING' && timerStatus !== 'PAUSED') return
+    const second = Math.floor(elapsed)
+    if (second === savedSecond.current) return
+    savedSecond.current = second
+    saveSession({ config, elapsed, savedAt: Date.now() })
+  }, [config, elapsed, timerStatus])
 
   function stop() {
     stopSpeaking()
+    // An explicit stop is a decision, not an interruption: there is nothing to offer
+    // to resume next time the page opens.
+    clearSession()
     timer.reset()
     onExit()
   }
