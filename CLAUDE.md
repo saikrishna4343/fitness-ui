@@ -119,7 +119,12 @@ outlives deploys and a NaN would hang the clock on one phase forever.
   under their own localStorage key so a Reset of the intervals does not clear them.
 - The plan is frozen in a `useMemo` for the length of a session; editing mid-workout must
   not move phase boundaries under a running clock.
-- A running session snapshots `{config, elapsed}` to localStorage once a second, so a
+- Starting a session on a day with **no** exercises copies the intervals into today's
+  workout (rounds → target sets, work seconds → target reps) and records that session id
+  as `linkedWorkoutId`; finishing then calls `complete_workout` on it, which ticks every
+  exercise server-side. A day that already has exercises is never touched, and never
+  auto-completed. The fill is fired but not awaited — the countdown starts on the click.
+- A running session snapshots `{config, elapsed, linkedWorkoutId}` to localStorage once a second, so a
   reload or a discarded background tab costs at most one second. It comes back **paused**
   at that point behind a Resume card, never running — the page has just reloaded and
   nobody is mid-burpee. The snapshot stores the config the session started with, expires
