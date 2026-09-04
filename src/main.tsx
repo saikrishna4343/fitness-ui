@@ -13,6 +13,7 @@ import Login from '@/pages/Login'
 import Plan from '@/pages/Plan'
 import Progress from '@/pages/Progress'
 import Settings from '@/pages/Settings'
+import Timer from '@/pages/Timer'
 import SignUp from '@/pages/SignUp'
 import Workout from '@/pages/Workout'
 import '@/index.css'
@@ -74,6 +75,7 @@ void removeStaleMockWorker().then(() => {
                     <Route path="food" element={<FoodLog />} />
                     <Route path="workout" element={<Workout />} />
                     <Route path="plan" element={<Plan />} />
+                    <Route path="timer" element={<Timer />} />
                     <Route path="progress" element={<Progress />} />
                     <Route path="settings" element={<Settings />} />
                   </Route>

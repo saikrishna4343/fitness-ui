@@ -91,6 +91,28 @@ schema list (Dashboard → Integrations → Data API → Settings) or every requ
   (`toIsoDate` in `src/lib/format.ts`) plus an ISO instant for time eaten, so a meal at
   11pm counts toward the right local day.
 
+### The interval timer (`/timer`) is the exception to all of the above
+
+It is the only feature with no server state: the config lives in localStorage
+(`src/lib/timerStorage.ts`), which re-validates every field on load because that JSON
+outlives deploys and a NaN would hang the clock on one phase forever.
+
+- `src/lib/intervalPlan.ts` flattens a config into a flat `Phase[]` **once**, before the
+  clock starts. Everything downstream — countdown, voice, skip, progress — reads that
+  array, so seeking is a lookup and there is no nested round/exercise bookkeeping inside
+  an interval callback. Phases carry forward-looking positions (a round rest reports the
+  round it leads *into*), and zero-second phases are dropped at build time.
+- `src/lib/useIntervalTimer.ts` derives elapsed time from a timestamp taken at the last
+  start/resume, never by accumulating ticks — otherwise the voice and the clock drift
+  apart over a long session. Voice cues fire from the sampled tick (guarded by refs so a
+  re-render cannot repeat one), not from a render effect. It also holds a screen wake lock
+  while running, re-acquired on `visibilitychange`.
+- `src/lib/speech.ts` wraps `speechSynthesis`. `unlockSpeech()` must be called inside the
+  user gesture that starts a session — iOS stays silent for the first cue otherwise, which
+  is why both the page's Start button and the runner's call it.
+- The plan is frozen in a `useMemo` for the length of a session; editing mid-workout must
+  not move phase boundaries under a running clock.
+
 ### Frontend conventions
 
 - `@/` aliases `src/` (Vite + tsconfig).

@@ -39,6 +39,7 @@ Two rules hold throughout that file:
 | `/food` | The food log for any date. Entries grouped by meal, each showing the time you ate. Add, edit, delete, and set that day's goal. |
 | `/workout` | The full workout for any date: tick exercises, record the weight and reps you actually did, add one-off exercises, complete or skip. |
 | `/plan` | The weekly split. Set each day's focus, mark rest days, add/edit/reorder exercises. |
+| `/timer` | Interval (HIIT) timer. Groups of exercises, each repeated for a number of rounds, with per-exercise work time, gaps, warm-up and cool-down — counted down out loud. |
 | `/progress` | Calories and macros per day over 7/30/90 days, with a table view, plus streak and workout stats. |
 | `/settings` | Your profile, default calorie and macro goals, and your saved-foods library. |
 
@@ -169,6 +170,11 @@ the right way to get the same behaviour.
   that date, and never re-read — editing the plan must not rewrite a workout you already
   logged. "Load from plan" on the workout screen re-copies deliberately, and refuses once
   anything is ticked.
+- **The interval timer is the one thing not in the database.** A timer config is a
+  scratchpad you rewrite between sets, so it lives in localStorage — no schema, no policy,
+  no migration. It is also the only screen that talks, via the browser's own speech
+  synthesis: 3-2-1 through the last three seconds of every interval, then "start" going
+  into an exercise and "rest easy" coming out of one.
 - **Chart colours** are the `--chart-*` tokens in `src/index.css`. Both the light and dark
   sets were checked for colour-blind separation and contrast against their surface; the
   macro chart also ships a legend and a Table tab so identity is never colour-alone.
