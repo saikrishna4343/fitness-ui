@@ -8,6 +8,7 @@ import {
   Moon,
   Settings as SettingsIcon,
   Sun,
+  Timer,
   TrendingUp,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
@@ -25,6 +26,7 @@ const NAV = [
   { to: '/food', label: 'Food log', icon: Apple, end: false },
   { to: '/workout', label: "Today's workout", icon: Dumbbell, end: false },
   { to: '/plan', label: 'Weekly plan', icon: CalendarDays, end: false },
+  { to: '/timer', label: 'Interval timer', icon: Timer, end: false },
   { to: '/progress', label: 'Progress', icon: TrendingUp, end: false },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false },
 ]

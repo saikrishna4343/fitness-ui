@@ -1,5 +1,13 @@
-import { CheckCircle2, Plus, RotateCcw, SkipForward, Undo2 } from 'lucide-react'
+import {
+  CheckCircle2,
+  Plus,
+  RotateCcw,
+  SkipForward,
+  Timer as TimerIcon,
+  Undo2,
+} from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   useCompleteWorkout,
@@ -116,6 +124,12 @@ export default function Workout() {
                 >
                   <RotateCcw className="size-4" />
                   Load from plan
+                </Button>
+                <Button variant="outline" size="sm" className="gap-2" asChild>
+                  <Link to="/timer">
+                    <TimerIcon className="size-4" />
+                    Interval timer
+                  </Link>
                 </Button>
                 <Button size="sm" className="gap-2" onClick={() => setAddOpen(true)}>
                   <Plus className="size-4" />
