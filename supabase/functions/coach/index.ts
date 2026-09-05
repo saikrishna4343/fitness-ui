@@ -23,8 +23,12 @@ const MODEL = 'claude-opus-5'
 const MAX_TOKENS = 8192
 /** Read tool, write tool, answer. More than this is a loop, not a conversation. */
 const MAX_TURNS = 6
-/** Messages replayed to the model. Older ones stay in the table for the UI. */
-const HISTORY = 30
+/**
+ * Replay is text-only, short, and recent -- see `replayable` below for why.
+ * The table keeps everything; these numbers only govern what is re-sent.
+ */
+const REPLAY_MESSAGES = 12
+const REPLAY_WINDOW_HOURS = 12
 const DAILY_LIMIT = 40
 
 const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') })
@@ -40,6 +44,54 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
+
+/** Text blocks only, as the model's own message shape. */
+function textOnly(content: unknown): { type: 'text'; text: string }[] {
+  if (typeof content === 'string') {
+    return content.trim() ? [{ type: 'text', text: content }] : []
+  }
+  if (!Array.isArray(content)) return []
+  return content
+    .filter(
+      (block): block is { type: 'text'; text: string } =>
+        typeof block === 'object' &&
+        block !== null &&
+        (block as { type?: string }).type === 'text' &&
+        typeof (block as { text?: string }).text === 'string' &&
+        (block as { text: string }).text.trim().length > 0,
+    )
+    .map((block) => ({ type: 'text', text: block.text }))
+}
+
+/**
+ * What gets re-sent to the model, and deliberately not much.
+ *
+ * Tool calls and their results are stripped. They are the expensive part by a wide
+ * margin -- three weeks of training history is a page of JSON, and replaying it on
+ * every message pays for the same rows again and again -- and they are the part the
+ * model can simply fetch again, fresher, for the price of one tool call. What it
+ * cannot fetch again is what was *said*: "add them to today" only means anything
+ * next to the message listing them. So the words stay and the data goes.
+ *
+ * History also expires. A conversation from this morning still applies at dinner;
+ * one from last week is about a different day and is not worth paying to re-read.
+ */
+function replayable(
+  rows: { role: 'user' | 'assistant'; content: unknown }[],
+): { role: 'user' | 'assistant'; content: unknown }[] {
+  const kept = rows
+    .slice()
+    .reverse()
+    .map((row) => ({ role: row.role, content: textOnly(row.content) }))
+    .filter((row) => row.content.length > 0)
+    .slice(-REPLAY_MESSAGES)
+
+  // A turn that was nothing but tool traffic leaves an assistant message at the
+  // front once the tool blocks are gone, and the API requires a user message first.
+  while (kept.length > 0 && kept[0].role === 'assistant') kept.shift()
+
+  return kept
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
@@ -96,21 +148,24 @@ Deno.serve(async (req) => {
     )
   }
 
+  const since = new Date(Date.now() - REPLAY_WINDOW_HOURS * 3600_000).toISOString()
   const history = await db
     .from('coach_message')
     .select('role, content')
     .eq('status', 'A')
+    .gt('created_at', since)
     .order('created_at', { ascending: false })
-    .limit(HISTORY)
+    .limit(REPLAY_MESSAGES * 4)
   if (history.error) return json({ error: history.error.message }, 400)
 
   const messages: { role: 'user' | 'assistant'; content: unknown }[] = [
-    ...(history.data ?? []).reverse().map((row) => ({ role: row.role, content: row.content })),
+    ...replayable(history.data ?? []),
     { role: 'user' as const, content: [{ type: 'text', text: message }] },
   ]
 
-  // Everything produced this exchange, written to the table at the end so the next
-  // request replays exactly what happened -- tool calls and results included.
+  // Everything produced this exchange, written to the table in full: the transcript
+  // is the record of what the coach actually did, and the loop below needs the tool
+  // blocks intact while it runs. Only the *replay* drops them.
   const transcript: { role: string; content: unknown }[] = [
     { role: 'user', content: [{ type: 'text', text: message }] },
   ]

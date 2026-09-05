@@ -152,6 +152,13 @@ nothing about it — check it with `deno check supabase/functions/coach/index.ts
   `search_saved_foods` misses.
 - `last_training_day()` is the rest-day walk-back in one query, and counts a day as
   training only if an exercise was **completed** — so it cannot disagree with Progress.
+- **History replay is text-only** (`replayable()` in `index.ts`): tool calls and their
+  results are stripped before re-sending, capped at 12 messages and 12 hours. Tool results
+  are both the expensive part — three weeks of training history is a page of JSON, billed
+  again on every message since history sits *after* the cache breakpoint — and the part the
+  model can re-fetch fresher for one tool call. The words stay because "add them to today"
+  is meaningless without the message listing them. The table still stores everything; only
+  the replay is trimmed.
 - **`TOOLS` order is load-bearing.** Tools render before the system prompt in the cached
   prefix; reordering them costs a full cache miss on every request. Same for any edit to
   `prompt.ts` — one uncached request, then free.
