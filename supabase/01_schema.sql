@@ -32,6 +32,10 @@ create table fitness.user_profile (
     user_id            uuid primary key,
     first_name         text,
     last_name          text,
+    -- Optional, and the only thing here that is not a preference: every
+    -- maintenance-calorie formula needs age, and age is the one measurement
+    -- that would be wrong tomorrow if it were stored as a number.
+    birth_date         date    check (birth_date is null or birth_date > date '1900-01-01'),
     sex                text check (sex in ('MALE', 'FEMALE', 'OTHER')),
     height_cm          integer,
     weight_kg          numeric(6, 2),

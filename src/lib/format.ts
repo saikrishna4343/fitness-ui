@@ -28,6 +28,26 @@ export function fullName(
   return [first, last].map((part) => part?.trim()).filter(Boolean).join(' ') || null
 }
 
+/**
+ * Whole years since `birthDate`, or null when there is no date or it is not a date.
+ *
+ * Derived on every read rather than stored: an age written down is wrong within
+ * a year, and this is the number a calorie target is built from.
+ */
+export function ageFrom(birthDate: string | null | undefined): number | null {
+  if (!birthDate) return null
+  const born = parseISO(birthDate)
+  if (Number.isNaN(born.getTime())) return null
+
+  const today = new Date()
+  let age = today.getFullYear() - born.getFullYear()
+  // The birthday has not come round yet this year, so a year has not been lived.
+  const monthDiff = today.getMonth() - born.getMonth()
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < born.getDate())) age -= 1
+
+  return age >= 0 && age < 130 ? age : null
+}
+
 /** Calories are whole numbers everywhere in the UI; macros keep one decimal when they have one. */
 export function kcal(value: number | null | undefined): string {
   return Math.round(value ?? 0).toLocaleString()

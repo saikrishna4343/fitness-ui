@@ -98,6 +98,7 @@ type ProfileRow = {
   user_id: string
   first_name: string | null
   last_name: string | null
+  birth_date: string | null
   sex: string | null
   height_cm: number | null
   weight_kg: number | null
@@ -134,6 +135,7 @@ const toProfile = (r: ProfileRow): Profile => ({
   userId: r.user_id,
   firstName: r.first_name,
   lastName: r.last_name,
+  birthDate: r.birth_date,
   sex: r.sex,
   heightCm: r.height_cm,
   weightKg: r.weight_kg,
@@ -216,6 +218,9 @@ export function useUpdateProfile() {
       const patch: Record<string, unknown> = {}
       if (body.firstName !== undefined) patch.first_name = body.firstName
       if (body.lastName !== undefined) patch.last_name = body.lastName
+      // Empty string is not a date. Postgres rejects it outright, so the cleared
+      // field has to reach the column as null.
+      if (body.birthDate !== undefined) patch.birth_date = body.birthDate || null
       if (body.sex !== undefined) patch.sex = body.sex
       if (body.heightCm !== undefined) patch.height_cm = body.heightCm
       if (body.weightKg !== undefined) patch.weight_kg = body.weightKg

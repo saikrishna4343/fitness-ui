@@ -17,6 +17,8 @@ export interface Profile {
   userId: string
   firstName: string | null
   lastName: string | null
+  /** `yyyy-MM-dd`, or null. Age is derived from it on read, never stored. */
+  birthDate: string | null
   sex: string | null
   heightCm: number | null
   weightKg: number | null
