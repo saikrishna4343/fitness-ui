@@ -131,6 +131,18 @@ npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 npx supabase functions deploy coach
 ```
 
+**Or deploy from the dashboard**, with no CLI at all: **Edge Functions -> Deploy a new
+function -> via editor**, name it `coach`, and paste the contents of
+
+```sh
+npm run coach:bundle    # writes supabase/functions/coach/_bundle.ts
+```
+
+which is the three source files rolled into one, since the editor is easier to fill with a
+single file. That bundle is generated and gitignored -- edit the three files and rebuild
+it, never the bundle. The API key goes in **Edge Functions -> Secrets** as
+`ANTHROPIC_API_KEY`.
+
 `supabase/config.toml` is committed; `supabase/.temp`, which records the project this
 checkout is linked to, is not. Deploying does not need Docker -- that is only for
 `supabase start`. Logs are under **Edge Functions -> coach -> Logs** in the dashboard, or
