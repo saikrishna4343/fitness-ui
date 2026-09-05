@@ -74,6 +74,12 @@ single `display_name` column with `first_name` / `last_name` on a database creat
 that split, backfilling the existing names. Run it once, then re-run `03_api.sql`. A fresh
 install gets both columns from `01_schema.sql` and must skip it.
 
+`supabase/12_birth_date.sql` is not part of setup either. It adds `birth_date` to a
+profile table created before that column existed. Run it once, then re-run `03_api.sql` --
+`ensure_profile()` returns the table's own row type, so it has to be recreated before the
+new column reaches the API. A fresh install gets the column from `01_schema.sql` and must
+skip it.
+
 `supabase/05_adopt_dev_data.sql` is not part of setup. It is a one-time migration kept for
 reference, from when this app ran behind a Spring Boot service that hardcoded a single dev
 user id — it moves those rows onto a real account. A fresh install has nothing to adopt.

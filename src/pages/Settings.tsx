@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { fullName } from '@/lib/format'
+import { ageFrom, fullName, toIsoDate } from '@/lib/format'
 import type { Profile } from '@/types/api'
 
 const GOALS = [
@@ -58,6 +58,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
       {
         firstName: form.firstName,
         lastName: form.lastName,
+        birthDate: form.birthDate,
         sex: form.sex,
         heightCm: form.heightCm,
         weightKg: form.weightKg,
@@ -109,6 +110,24 @@ function ProfileForm({ profile }: { profile: Profile }) {
               </span>
               {' '}in the sidebar. The dashboard greets you by first name.
             </p>
+            <Field label="Date of birth" htmlFor="birth-date">
+              <Input
+                id="birth-date"
+                type="date"
+                autoComplete="bday"
+                // A date in the future is not a birthday. The lower bound matches
+                // the column's own constraint.
+                min="1900-01-02"
+                max={toIsoDate(new Date())}
+                value={form.birthDate ?? ''}
+                onChange={(event) => set('birthDate', event.target.value || null)}
+              />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {ageFrom(form.birthDate) !== null
+                  ? `${ageFrom(form.birthDate)} years old. Used to work out the calories you burn at rest.`
+                  : 'Optional, but a calorie target cannot be worked out without it.'}
+              </p>
+            </Field>
             <Field label="Sex" htmlFor="sex">
               <Input
                 id="sex"

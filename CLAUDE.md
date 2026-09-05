@@ -65,6 +65,10 @@ Reads and writes that are more than a row change are RPCs, not table writes — 
 - `effective_goal(date)`, `daily_summary(from, to)` — goal carry-forward and per-day totals.
 - `complete_workout` / `reopen_workout` / `skip_workout`, `reorder_*`.
 
+A function returning a table's own row type (`ensure_profile()` returns
+`fitness.user_profile`) must be recreated after that table gains a column, or the new column
+never reaches PostgREST — which is why `12_birth_date.sql` says to re-run `03_api.sql`.
+
 Changing behaviour usually means editing a SQL file **and** re-running it in the Supabase
 SQL editor — the repo has no migration runner. `08_audit_columns.sql` is re-runnable and
 loops over every table in the schema, which is how a new table picks up `status` and the
