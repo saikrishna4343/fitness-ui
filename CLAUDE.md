@@ -157,6 +157,11 @@ nothing about it — check it with `deno check supabase/functions/coach/index.ts
   `prompt.ts` — one uncached request, then free.
 - Writes run when asked for in words; `add_todays_exercises` appends by default and
   `replace` refuses once anything is ticked, matching "Load from plan".
+- The conversation lives in `CoachConversation`, shared by `/coach` and the floating
+  launcher in `AppShell` — one component, because two copies of a streaming chat would be
+  two places for the scroll behaviour and the send guard to drift. The panel is the base
+  `DialogContent` re-anchored to the right edge with tailwind-merge overrides, which keeps
+  its focus trap, Escape handling and scroll lock rather than reimplementing them.
 - `src/api/coach.ts` is the deliberate exception to "hooks.ts is the only module that
   touches the network": it streams SSE from the function, which is not a shape TanStack
   Query fits. The stored transcript beside it *is* a normal query.

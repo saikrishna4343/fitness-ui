@@ -40,7 +40,7 @@ Two rules hold throughout that file:
 | `/workout` | The full workout for any date: tick exercises, record the weight and reps you actually did, add one-off exercises, complete or skip. |
 | `/plan` | The weekly split. Set each day's focus, mark rest days, add/edit/reorder exercises. |
 | `/timer` | Interval (HIIT) timer. Groups of exercises, each repeated for a number of rounds, with per-exercise work time, gaps, warm-up and cool-down — counted down out loud. |
-| `/coach` | An AI coach for meals and training. It reads your own log to answer, and can add exercises to today's workout when you ask. |
+| `/coach` | An AI coach for meals and training. It reads your own log to answer, and can add exercises to today's workout when you ask. The same conversation is a tap away from every other screen, from the button in the bottom right. |
 | `/progress` | Calories and macros per day over 7/30/90 days, with a table view, plus streak and workout stats. |
 | `/settings` | Your profile, default calorie and macro goals, and your saved-foods library. |
 

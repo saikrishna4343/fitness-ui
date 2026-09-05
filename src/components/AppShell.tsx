@@ -16,6 +16,7 @@ import { useState, type ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useProfile } from '@/api/hooks'
 import { useAuth } from '@/auth/AuthProvider'
+import { CoachLauncher } from '@/components/CoachLauncher'
 import { useTheme } from '@/components/ThemeProvider'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -119,10 +120,13 @@ export function AppShell() {
       )}
 
       <main className="lg:pl-64">
-        <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:py-10">
+        {/* Bottom padding clears the floating coach button on short screens. */}
+        <div className="mx-auto w-full max-w-5xl px-4 py-6 pb-24 sm:px-6 lg:py-10">
           <Outlet />
         </div>
       </main>
+
+      <CoachLauncher />
     </div>
   )
 }
