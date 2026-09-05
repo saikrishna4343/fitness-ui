@@ -12,17 +12,23 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ageFrom, fullName, toIsoDate } from '@/lib/format'
 import type { Profile } from '@/types/api'
 
+// These are the values the column's check constraint accepts, verbatim. They used
+// to be shortened here -- 'LOSE', 'LIGHT' -- which meant a profile with the default
+// MODERATELY_ACTIVE matched no option and showed an empty select, and saving either
+// field failed the constraint outright. fitness.coach_targets() reads them too, so
+// the spelling now has to hold in three places.
 const GOALS = [
-  { value: 'LOSE', label: 'Lose weight' },
+  { value: 'LOSE_WEIGHT', label: 'Lose weight' },
   { value: 'MAINTAIN', label: 'Maintain' },
-  { value: 'GAIN', label: 'Gain muscle' },
+  { value: 'GAIN_MUSCLE', label: 'Gain muscle' },
 ]
 
 const ACTIVITY = [
   { value: 'SEDENTARY', label: 'Sedentary' },
-  { value: 'LIGHT', label: 'Lightly active' },
-  { value: 'MODERATE', label: 'Moderately active' },
-  { value: 'ACTIVE', label: 'Very active' },
+  { value: 'LIGHTLY_ACTIVE', label: 'Lightly active' },
+  { value: 'MODERATELY_ACTIVE', label: 'Moderately active' },
+  { value: 'VERY_ACTIVE', label: 'Very active' },
+  { value: 'EXTRA_ACTIVE', label: 'Extremely active' },
 ]
 
 export default function Settings() {
