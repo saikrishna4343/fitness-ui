@@ -135,6 +135,35 @@ outlives deploys and a NaN would hang the clock on one phase forever.
   after 6 hours, and is cleared on finish and on an explicit Stop (a decision, unlike an
   interruption).
 
+### The coach (`/coach`) is the only server-side code
+
+`supabase/functions/coach/` is a Deno edge function and the single reason this project has
+any backend at all: the Anthropic API key cannot ship in the bundle. It is **outside
+`tsc`'s scope** (`tsconfig.app.json` includes only `src`), so `npm run build` proves
+nothing about it — check it with `deno check supabase/functions/coach/index.ts`.
+
+- **The security model is the JWT, not the tool code.** The function builds its Supabase
+  client from the caller's `Authorization` header, so every tool query runs as that user
+  under existing RLS. There is no service-role key anywhere in it, and adding one would
+  make the model's reach a matter of how carefully the tools were written.
+- **Numbers are computed, words are generated.** `coach_targets()`, `daily_summary()`,
+  `last_training_day()` and `training_history()` do the arithmetic; the model explains the
+  result. The one sanctioned estimate is food macros from a description, and only after
+  `search_saved_foods` misses.
+- `last_training_day()` is the rest-day walk-back in one query, and counts a day as
+  training only if an exercise was **completed** — so it cannot disagree with Progress.
+- **`TOOLS` order is load-bearing.** Tools render before the system prompt in the cached
+  prefix; reordering them costs a full cache miss on every request. Same for any edit to
+  `prompt.ts` — one uncached request, then free.
+- Writes run when asked for in words; `add_todays_exercises` appends by default and
+  `replace` refuses once anything is ticked, matching "Load from plan".
+- `src/api/coach.ts` is the deliberate exception to "hooks.ts is the only module that
+  touches the network": it streams SSE from the function, which is not a shape TanStack
+  Query fits. The stored transcript beside it *is* a normal query.
+- The profile's `goal` and `activity_level` values must match the check constraints in
+  `01_schema.sql` exactly (`LOSE_WEIGHT`, `MODERATELY_ACTIVE`, ...). Settings, the
+  constraint, and `coach_targets()` all read them.
+
 ### Frontend conventions
 
 - `@/` aliases `src/` (Vite + tsconfig).

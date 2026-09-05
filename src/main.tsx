@@ -7,6 +7,7 @@ import { AppShell } from '@/components/AppShell'
 import { ThemeProvider } from '@/components/ThemeProvider'
 import { Toaster } from '@/components/ui/sonner'
 import { ApiError } from '@/lib/api'
+import Coach from '@/pages/Coach'
 import Dashboard from '@/pages/Dashboard'
 import FoodLog from '@/pages/FoodLog'
 import Login from '@/pages/Login'
@@ -76,6 +77,7 @@ void removeStaleMockWorker().then(() => {
                     <Route path="workout" element={<Workout />} />
                     <Route path="plan" element={<Plan />} />
                     <Route path="timer" element={<Timer />} />
+                    <Route path="coach" element={<Coach />} />
                     <Route path="progress" element={<Progress />} />
                     <Route path="settings" element={<Settings />} />
                   </Route>

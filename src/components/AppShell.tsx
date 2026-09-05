@@ -1,5 +1,6 @@
 import {
   Apple,
+  Bot,
   CalendarDays,
   Dumbbell,
   LayoutDashboard,
@@ -28,6 +29,7 @@ const NAV = [
   { to: '/plan', label: 'Weekly plan', icon: CalendarDays, end: false },
   { to: '/timer', label: 'Interval timer', icon: Timer, end: false },
   { to: '/progress', label: 'Progress', icon: TrendingUp, end: false },
+  { to: '/coach', label: 'Coach', icon: Bot, end: false },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false },
 ]
 

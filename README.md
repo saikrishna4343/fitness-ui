@@ -40,6 +40,7 @@ Two rules hold throughout that file:
 | `/workout` | The full workout for any date: tick exercises, record the weight and reps you actually did, add one-off exercises, complete or skip. |
 | `/plan` | The weekly split. Set each day's focus, mark rest days, add/edit/reorder exercises. |
 | `/timer` | Interval (HIIT) timer. Groups of exercises, each repeated for a number of rounds, with per-exercise work time, gaps, warm-up and cool-down — counted down out loud. |
+| `/coach` | An AI coach for meals and training. It reads your own log to answer, and can add exercises to today's workout when you ask. |
 | `/progress` | Calories and macros per day over 7/30/90 days, with a table view, plus streak and workout stats. |
 | `/settings` | Your profile, default calorie and macro goals, and your saved-foods library. |
 
@@ -111,7 +112,31 @@ The anon key is meant to be public — it ships inside the JavaScript bundle and
 from DevTools on any deployed build. RLS is what protects the data, not the key. The
 **service key** is the one that must never appear here: it bypasses every policy.
 
-### 4. Run
+### 4. The coach (optional)
+
+The `/coach` screen needs one server-side piece, because an Anthropic API key cannot
+live in the browser bundle the way the anon key does. It is a Supabase Edge Function.
+
+1. Run `supabase/13_coach.sql` in the SQL editor. It brings its own grants and policies.
+2. Get an API key from **console.anthropic.com -> Settings -> API keys**, and buy credits
+   under Plans & Billing. API access is prepaid and separate from a Claude.ai
+   subscription -- a Pro plan does not include it.
+3. Deploy:
+
+```sh
+supabase login
+supabase link --project-ref <your-project-ref>
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+supabase functions deploy coach
+```
+
+The key goes in `supabase secrets`, never in `.env.local`. Anything prefixed `VITE_` is
+inlined into the bundle at build time and is readable by anyone who opens DevTools.
+
+Without the function deployed the rest of the app is unaffected: the Coach screen reports
+that it is unreachable and nothing else changes.
+
+### 5. Run
 
 ```sh
 npm install
@@ -190,6 +215,11 @@ the right way to get the same behaviour.
   the work time becomes the reps — and running the session to the end marks that workout
   complete. A day that already has exercises is left alone: a ten-minute interval session
   is not proof you did the eight lifts you had planned.
+- **The coach quotes numbers it did not invent.** Calorie targets, averages and the last
+  training day are computed in Postgres and handed to the model to explain; the only thing
+  it estimates is the macros of a food described in words, and only after searching your
+  saved foods. It is capped at 40 messages a day, and every tool query runs under your own
+  JWT, so row level security scopes what it can read exactly as it scopes the app.
 - **A reloaded timer picks up where it was.** A running session is snapshotted every
   second, and comes back paused behind a Resume card rather than counting down at someone
   who has just reloaded the page. Stopping deliberately clears it; so does finishing.
