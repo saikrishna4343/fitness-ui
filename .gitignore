@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase CLI local state -- which project this checkout is linked to, and its caches.
+supabase/.temp
+supabase/.branches

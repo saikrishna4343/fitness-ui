@@ -121,14 +121,20 @@ live in the browser bundle the way the anon key does. It is a Supabase Edge Func
 2. Get an API key from **console.anthropic.com -> Settings -> API keys**, and buy credits
    under Plans & Billing. API access is prepaid and separate from a Claude.ai
    subscription -- a Pro plan does not include it.
-3. Deploy:
+3. Deploy. The CLI is a dev dependency, so `npx` runs it -- do not install it globally
+   with npm, which it refuses:
 
 ```sh
-supabase login
-supabase link --project-ref <your-project-ref>
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-supabase functions deploy coach
+npx supabase login                                # opens a browser, once per machine
+npx supabase link --project-ref <your-project-ref>   # the subdomain of your project URL
+npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+npx supabase functions deploy coach
 ```
+
+`supabase/config.toml` is committed; `supabase/.temp`, which records the project this
+checkout is linked to, is not. Deploying does not need Docker -- that is only for
+`supabase start`. Logs are under **Edge Functions -> coach -> Logs** in the dashboard, or
+`npx supabase functions logs coach`.
 
 The key goes in `supabase secrets`, never in `.env.local`. Anything prefixed `VITE_` is
 inlined into the bundle at build time and is readable by anyone who opens DevTools.
