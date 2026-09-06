@@ -1,4 +1,4 @@
-import { Check, Dumbbell, History, Play, RefreshCw, RotateCcw, Timer as TimerIcon, X } from 'lucide-react'
+import { Check, Dumbbell, History, Play, RotateCcw, Timer as TimerIcon, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -34,13 +34,12 @@ import {
   repsFromSeconds,
   syncFromWorkout,
   withSessionIds,
-  workoutDiffers,
 } from '@/lib/timerWorkout'
 import type { Phase, TimerConfig } from '@/types/timer'
 
 export default function Timer() {
   // Read once, on the first render: a later read would fight whatever is being typed.
-  const [config, setConfig] = useState<TimerConfig>(loadConfig)
+  const [stored, setStored] = useState<TimerConfig>(loadConfig)
   const [sound, setSound] = useState<SoundSettings>(loadSound)
   const [running, setRunning] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -58,7 +57,6 @@ export default function Timer() {
    */
   const [runConfig, setRunConfig] = useState<TimerConfig | null>(null)
 
-  useEffect(() => saveConfig(config), [config])
   useEffect(() => saveSound(sound), [sound])
 
   const today = toIsoDate(new Date())
@@ -68,21 +66,31 @@ export default function Timer() {
   const tickExercise = useTickExercise(today)
   const completeWorkout = useCompleteWorkout(today)
 
+  /**
+   * Today's workout, folded in.
+   *
+   * Derived rather than copied on a button press: the two screens are meant to be one
+   * workout, so an exercise added over there has to be here without anyone asking.
+   * Doing it in a memo rather than an effect means there is no second render and no
+   * state to fall out of step -- the config simply *is* the merge.
+   *
+   * `syncFromWorkout` keeps whatever you set here, matched by session id, so this
+   * running on every render costs nothing and changes nothing once it has settled.
+   */
+  const config = useMemo(
+    () => (stored.syncWithWorkout && workout ? syncFromWorkout(stored, workout) : stored),
+    [stored, workout],
+  )
+
+  // The merged config is what gets saved, so the session ids survive a reload.
+  useEffect(() => saveConfig(config), [config])
+
+  const setConfig = setStored
+
   const plan = useMemo(() => buildPlan(config), [config])
   const totals = countWork(config)
   const empty = plan.totalSeconds === 0
   const linked = findWorkoutGroup(config)
-  const outOfStep = config.syncWithWorkout && workoutDiffers(config, workout)
-
-  function pullFromWorkout() {
-    if (!workout) return
-    setConfig((current) => syncFromWorkout(current, workout))
-    toast.success(
-      workout.exercises.length === 0
-        ? "Today's workout is empty, so its group is gone"
-        : `Loaded ${workout.exercises.length} exercises from today's workout`,
-    )
-  }
 
   /**
    * Pushes anything the timer has that the workout does not, and returns the config
@@ -285,39 +293,20 @@ export default function Timer() {
                   Keep today&apos;s workout in step
                 </Label>
                 <p className="mt-0.5 max-w-prose text-xs text-muted-foreground">
-                  Exercises here are added to today&apos;s workout, and ticked off as you finish
-                  their last set. Turn it off for a session you would rather not log.
+                  {linked
+                    ? `The ${linked.exercises.length} exercises on today are below, with their sets — set the seconds for each. Add or remove them on the Workout screen. Finishing an exercise's last set ticks it there.`
+                    : 'Exercises here are added to today’s workout, and ticked off as you finish their last set. Turn it off for a session you would rather not log.'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {config.syncWithWorkout && workout && (
-                <Button variant="outline" size="sm" className="gap-2" onClick={pullFromWorkout}>
-                  {linked ? <RefreshCw className="size-4" /> : <Dumbbell className="size-4" />}
-                  {linked ? 'Refresh' : "Load today's workout"}
-                </Button>
-              )}
-              <Switch
-                id="sync"
-                checked={config.syncWithWorkout}
-                onCheckedChange={(syncWithWorkout) => setConfig({ ...config, syncWithWorkout })}
-              />
-            </div>
+            <Switch
+              id="sync"
+              checked={config.syncWithWorkout}
+              onCheckedChange={(syncWithWorkout) => setConfig({ ...config, syncWithWorkout })}
+            />
           </CardContent>
         </Card>
-
-        {outOfStep && (
-          <p className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-            <RefreshCw className="size-4 shrink-0" />
-            {linked
-              ? "Today's workout has changed since you loaded it."
-              : `Today's workout has ${workout?.exercises.length ?? 0} exercises the timer has not.`}
-            <Button variant="link" size="sm" className="h-auto p-0" onClick={pullFromWorkout}>
-              Load them
-            </Button>
-          </p>
-        )}
 
         {empty && (
           <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
