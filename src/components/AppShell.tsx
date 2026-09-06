@@ -120,8 +120,14 @@ export function AppShell() {
       )}
 
       <main className="lg:pl-64">
-        {/* Bottom padding clears the floating coach button on short screens. */}
-        <div className="mx-auto w-full max-w-5xl px-4 py-6 pb-24 sm:px-6 lg:py-10">
+        {/*
+          The offset from the sidebar is a MARGIN, not padding. max-width applies to the
+          border box, so left padding came out of the column's own width -- pushing the
+          cards right made them narrower instead of moving them, which is the opposite of
+          what it looked like it would do. A margin moves the whole column and leaves the
+          cards their full width. Bottom padding clears the floating coach button.
+        */}
+        <div className="w-full max-w-6xl px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-10 xl:ml-40 2xl:ml-72">
           <Outlet />
         </div>
       </main>
