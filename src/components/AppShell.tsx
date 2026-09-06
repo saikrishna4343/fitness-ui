@@ -127,7 +127,7 @@ export function AppShell() {
           keeps the correction from overshooting -- a margin against the nav, not a gap.
           Bottom padding clears the floating coach button.
         */}
-        <div className="w-full max-w-6xl px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-10 xl:pl-20">
+        <div className="w-full max-w-6xl px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-10 xl:pl-32">
           <Outlet />
         </div>
       </main>
