@@ -32,20 +32,6 @@ interface FunctionCall {
   arguments: any
 }
 
-/** Pulls the calls out of a response, whichever level the steps arrive at. */
-function callsOf(interaction: Json): FunctionCall[] {
-  const steps: Json[] = interaction?.steps ?? interaction?.output ?? []
-  return steps
-    .filter((step) => step?.type === 'function_call')
-    .map((step) => ({
-      id: step.id ?? step.call_id ?? '',
-      name: step.name,
-      // Arguments come back parsed, but a string is cheap to allow for and expensive
-      // to be surprised by.
-      arguments: typeof step.arguments === 'string' ? safeJson(step.arguments) : (step.arguments ?? {}),
-    }))
-}
-
 function safeJson(text: string): unknown {
   try {
     return JSON.parse(text)
@@ -54,13 +40,83 @@ function safeJson(text: string): unknown {
   }
 }
 
+/** Step types that carry text nobody wants read out as the answer. */
+const NOT_ANSWER = new Set(['function_call', 'function_result', 'thought', 'reasoning'])
+
+/**
+ * Walks a response and collects every piece of answer text in it.
+ *
+ * Deliberately shape-agnostic. The documented examples show `output_text` and a `steps`
+ * array, but the nesting under a step varies by step type, and the first attempt at
+ * reading it -- `step.text ?? step.content` -- put "[object Object]" in front of a user,
+ * which is the worst way to be wrong. Walking for `text` strings and skipping the step
+ * kinds that are not the answer holds up whatever the exact shape turns out to be.
+ */
+function harvest(node: unknown, out: string[]): void {
+  if (Array.isArray(node)) {
+    for (const entry of node) harvest(entry, out)
+    return
+  }
+  if (typeof node !== 'object' || node === null) return
+
+  const record = node as Record<string, unknown>
+  if (typeof record.type === 'string' && NOT_ANSWER.has(record.type)) return
+
+  if (typeof record.text === 'string' && record.text.length > 0) out.push(record.text)
+  for (const value of Object.values(record)) {
+    if (typeof value === 'object' && value !== null) harvest(value, out)
+  }
+}
+
 function textOf(interaction: Json): string {
-  if (typeof interaction?.output_text === 'string') return interaction.output_text
-  const steps: Json[] = interaction?.steps ?? interaction?.output ?? []
-  return steps
-    .filter((step) => step?.type === 'text' || step?.type === 'model_output')
-    .map((step) => step.text ?? step.content ?? '')
-    .join('')
+  if (typeof interaction?.output_text === 'string' && interaction.output_text.trim()) {
+    return interaction.output_text
+  }
+
+  const out: string[] = []
+  harvest(interaction?.steps ?? interaction?.output ?? interaction, out)
+  const text = out.join('').trim()
+
+  if (!text) {
+    // The one case worth a log line: the answer is in there somewhere and this did not
+    // find it. The keys are enough to fix it without another round of guessing.
+    console.error('[coach] gemini: no text found. keys:', Object.keys(interaction ?? {}))
+  }
+  return text
+}
+
+/** Every function_call in a response, at whatever depth it sits. */
+function callsOf(interaction: Json): FunctionCall[] {
+  const found: FunctionCall[] = []
+
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const entry of node) walk(entry)
+      return
+    }
+    if (typeof node !== 'object' || node === null) return
+
+    const record = node as Record<string, unknown>
+    if (record.type === 'function_call' && typeof record.name === 'string') {
+      found.push({
+        id: String(record.id ?? record.call_id ?? ''),
+        name: record.name,
+        // Arguments come back parsed, but a string is cheap to allow for and
+        // expensive to be surprised by.
+        arguments:
+          typeof record.arguments === 'string'
+            ? safeJson(record.arguments)
+            : (record.arguments ?? record.args ?? {}),
+      })
+      return
+    }
+    for (const value of Object.values(record)) {
+      if (typeof value === 'object' && value !== null) walk(value)
+    }
+  }
+
+  walk(interaction?.steps ?? interaction?.output ?? interaction)
+  return found
 }
 
 async function post(body: Json, key: string): Promise<Json> {
