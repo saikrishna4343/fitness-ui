@@ -57,6 +57,13 @@ export interface TimerConfig {
   groupRestSeconds: number
   groups: IntervalGroup[]
   /**
+   * Exercises on today's workout deliberately left out of the timer.
+   *
+   * Remembered, because otherwise the next sync would put back the thing you just
+   * took out -- the merge cannot tell "not here yet" from "not wanted" without it.
+   */
+  excludedExerciseIds: string[]
+  /**
    * Whether finishing work here writes back to today's workout.
    *
    * On by default, and worth being able to turn off: a quick five-minute circuit

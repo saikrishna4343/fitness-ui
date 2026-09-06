@@ -11,6 +11,7 @@ import {
 import { PageHeader } from '@/components/AppShell'
 import { IntervalPlanEditor } from '@/components/IntervalPlanEditor'
 import { IntervalRunner } from '@/components/IntervalRunner'
+import { TodaysExercises } from '@/components/TodaysExercises'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -26,12 +27,7 @@ import {
   saveConfig,
   type SavedSession,
 } from '@/lib/timerStorage'
-import {
-  findWorkoutGroup,
-  repsFromSeconds,
-  syncFromWorkout,
-  withSessionIds,
-} from '@/lib/timerWorkout'
+import { repsFromSeconds, syncFromWorkout } from '@/lib/timerWorkout'
 import type { Phase, TimerConfig } from '@/types/timer'
 
 export default function Timer() {
@@ -84,7 +80,6 @@ export default function Timer() {
   const plan = useMemo(() => buildPlan(config), [config])
   const totals = countWork(config)
   const empty = plan.totalSeconds === 0
-  const linked = findWorkoutGroup(config)
 
   /**
    * Pushes anything the timer has that the workout does not, and returns the config
@@ -141,7 +136,17 @@ export default function Timer() {
       toast.error(error instanceof Error ? error.message : 'Could not update the workout')
     }
 
-    const next = withSessionIds(config, ids)
+    const next: TimerConfig = {
+      ...config,
+      groups: config.groups.map((group) => ({
+        ...group,
+        exercises: group.exercises.map((exercise) =>
+          ids.has(exercise.id)
+            ? { ...exercise, sessionExerciseId: ids.get(exercise.id) ?? null }
+            : exercise,
+        ),
+      })),
+    }
     setConfig(next)
     return next
   }
@@ -276,6 +281,10 @@ export default function Timer() {
 
         {unfinished && <ResumeCard session={unfinished} onResume={resume} onDiscard={discard} />}
 
+        {config.syncWithWorkout && workout && (
+          <TodaysExercises workout={workout} config={config} onChange={setConfig} />
+        )}
+
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
             <div className="flex items-start gap-3">
@@ -287,9 +296,9 @@ export default function Timer() {
                   Keep today&apos;s workout in step
                 </Label>
                 <p className="mt-0.5 max-w-prose text-xs text-muted-foreground">
-                  {linked
-                    ? `The ${linked.exercises.length} exercises on today are below, with their sets — set the seconds for each. Add or remove them on the Workout screen. Finishing an exercise's last set ticks it there.`
-                    : 'Exercises here are added to today’s workout, and ticked off as you finish their last set. Turn it off for a session you would rather not log.'}
+                  Today&apos;s exercises appear here on their own, and anything you build here is
+                  added to today when you start. Turn it off for a session you would rather not
+                  log.
                 </p>
               </div>
             </div>

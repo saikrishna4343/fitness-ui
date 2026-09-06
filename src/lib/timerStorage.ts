@@ -38,6 +38,7 @@ export function defaultConfig(): TimerConfig {
     cooldownSeconds: 90,
     groupRestSeconds: 90,
     syncWithWorkout: true,
+    excludedExerciseIds: [],
     groups: [newGroup(0)],
   }
 }
@@ -105,6 +106,9 @@ function parse(raw: unknown): TimerConfig | null {
     // Absent in configs written before the two screens were linked. Defaulting it on
     // is the point of the feature; the switch is there for the exceptions.
     syncWithWorkout: source.syncWithWorkout !== false,
+    excludedExerciseIds: Array.isArray(source.excludedExerciseIds)
+      ? source.excludedExerciseIds.filter((id): id is string => typeof id === 'string')
+      : [],
     groups,
   }
 }

@@ -219,8 +219,10 @@ the right way to get the same behaviour.
   that date, and never re-read — editing the plan must not rewrite a workout you already
   logged. "Load from plan" on the workout screen re-copies deliberately, and refuses once
   anything is ticked.
-- **The timer and today's workout are the same workout.** Today's exercises are simply
-  *there* when you open the timer -- nothing to press -- and each one arrives with its sets and, where it has one, its interval;
+- **The timer and today's workout are the same workout.** Today's exercises are listed
+  in the timer the moment you open it, each with a group to run in -- put the heavy work
+  in one, the accessories in another, or leave one out of the session entirely. They
+  arrive with their sets and, where it has one, its interval;
   finish an exercise's last set and it is ticked on the Workout screen as you stand
   there. Anything you build in the timer that is not on today gets added when you press
   Start. The day is only marked complete when the timer actually covered all of it — a

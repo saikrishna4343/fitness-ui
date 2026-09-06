@@ -6,12 +6,15 @@ import type { IntervalExercise, IntervalGroup, TimerConfig } from '@/types/timer
  * Keeping the timer and today's workout in step.
  *
  * The two used to meet in exactly one place — an empty day, adopted at Start — and only
- * in one direction. This module is the join: today's exercises become a group here, and
- * finishing their sets ticks them there.
+ * in one direction. This module is the join: today's exercises appear here on their own,
+ * and finishing their sets ticks them there.
  *
- * The link is `sessionExerciseId` on each interval exercise. It is what lets the sync
- * be idempotent (running it twice changes nothing), what lets your own timings survive
- * a refresh from the workout, and what the runner writes ticks against.
+ * The link is `sessionExerciseId` on each interval exercise. It is what lets the sync be
+ * idempotent, what lets your own timings and grouping survive the workout changing under
+ * them, and what the runner writes ticks against.
+ *
+ * The sync only ever *adds* and *removes*. Which group an exercise sits in is yours: an
+ * exercise already somewhere in the config is left exactly where you put it.
  */
 
 const DEFAULT_SECONDS = 40
@@ -19,10 +22,10 @@ const DEFAULT_SECONDS = 40
 /**
  * How long to work an exercise for, from what the workout says about it.
  *
- * A workout is written in reps ("8-10"), which say nothing about duration — except
- * when they are already a duration, which is exactly what the timer writes back when
- * it pushes its own exercises across ("45s"). Reading that back means a round trip
- * through the workout screen does not quietly reset every interval to 40 seconds.
+ * A workout is written in reps ("8-10"), which say nothing about duration — except when
+ * they are already a duration, which is exactly what the timer writes back when it
+ * pushes its own exercises across ("45s"). Reading that back means a round trip through
+ * the Workout screen does not quietly reset every interval to 40 seconds.
  */
 export function secondsFromReps(reps: string | null | undefined): number {
   const match = /^\s*(\d+)\s*s(ec(onds?)?)?\s*$/i.exec(reps ?? '')
@@ -36,113 +39,126 @@ export function repsFromSeconds(seconds: number): string {
   return `${Math.max(1, Math.round(seconds))}s`
 }
 
-function fromWorkoutExercise(
-  exercise: WorkoutExercise,
-  previous: IntervalExercise | undefined,
-): IntervalExercise {
+function toInterval(exercise: WorkoutExercise): IntervalExercise {
   return {
-    // The id is kept when the exercise was already here, so React does not remount the
-    // row -- and so an in-flight edit is not thrown away by a refresh.
-    id: previous?.id ?? newId(),
+    id: newId(),
     name: exercise.name,
-    // Your timing wins over the default. You set 30 seconds for burpees on purpose;
-    // a refresh because a different exercise was added must not undo that.
-    seconds: previous?.seconds ?? secondsFromReps(exercise.targetReps),
-    sets: previous?.sets ?? Math.max(1, exercise.targetSets),
+    seconds: secondsFromReps(exercise.targetReps),
+    sets: Math.max(1, exercise.targetSets),
     sessionExerciseId: exercise.id,
   }
 }
 
-/**
- * The group as today's workout would have it: same exercises, same order.
- *
- * Straight sets rather than a circuit, because a workout is written that way -- 5x5
- * squats then 3x15 calf raises cannot be expressed as one round count for the group.
- */
-export function workoutGroup(workout: Workout, previous: IntervalGroup | undefined): IntervalGroup {
-  const byId = new Map((previous?.exercises ?? []).map((e) => [e.sessionExerciseId, e]))
-
-  return {
-    id: WORKOUT_GROUP_ID,
-    name: workout.focus?.trim() || "Today's workout",
-    style: 'SETS',
-    // Unused in SETS, but the plan builder drops any group with rounds <= 0.
-    rounds: 1,
-    restSeconds: previous?.restSeconds ?? 45,
-    roundRestSeconds: previous?.roundRestSeconds ?? 90,
-    exercises: workout.exercises.map((exercise) =>
-      fromWorkoutExercise(exercise, byId.get(exercise.id)),
-    ),
-  }
+/** Where an exercise from today's workout currently sits, if it is in the config. */
+export function groupOf(config: TimerConfig, sessionExerciseId: string): IntervalGroup | undefined {
+  return config.groups.find((group) =>
+    group.exercises.some((exercise) => exercise.sessionExerciseId === sessionExerciseId),
+  )
 }
 
 export function findWorkoutGroup(config: TimerConfig): IntervalGroup | undefined {
   return config.groups.find((group) => group.id === WORKOUT_GROUP_ID)
 }
 
+/** The group new exercises land in: the one the app made, or the first there is. */
+function landingGroup(config: TimerConfig): IntervalGroup | undefined {
+  return findWorkoutGroup(config) ?? config.groups[0]
+}
+
 /**
- * Pulls today's workout into the config, preserving whatever you have set here.
+ * Folds today's workout into the config.
  *
- * Idempotent: with nothing changed on the workout, this returns a config equal to the
- * one it was given, which is what makes it safe to offer as a one-click refresh.
+ * Adds what is new, drops what is gone, and touches nothing else — an exercise you moved
+ * into another group stays there, and one you set to 30 seconds stays at 30. Idempotent,
+ * which is what makes it safe to run on every render.
  */
 export function syncFromWorkout(config: TimerConfig, workout: Workout): TimerConfig {
-  const previous = findWorkoutGroup(config)
-  const group = workoutGroup(workout, previous)
+  const onToday = new Map(workout.exercises.map((exercise) => [exercise.id, exercise]))
+  const excluded = new Set(config.excludedExerciseIds)
 
-  if (workout.exercises.length === 0) {
-    // An empty day should not leave an empty group sitting at the top of the editor.
-    return { ...config, groups: config.groups.filter((g) => g.id !== WORKOUT_GROUP_ID) }
+  // Drop anything that was on today's workout and is not any more. An exercise with no
+  // session id was never from the workout, so it is left alone.
+  let groups = config.groups.map((group) => ({
+    ...group,
+    exercises: group.exercises.filter(
+      (exercise) => !exercise.sessionExerciseId || onToday.has(exercise.sessionExerciseId),
+    ),
+  }))
+
+  const known = new Set(
+    groups.flatMap((group) =>
+      group.exercises.map((exercise) => exercise.sessionExerciseId).filter(Boolean),
+    ),
+  )
+  const missing = workout.exercises.filter(
+    (exercise) => !known.has(exercise.id) && !excluded.has(exercise.id),
+  )
+
+  if (missing.length === 0) return { ...config, groups }
+
+  const landing = landingGroup({ ...config, groups })
+  if (landing) {
+    groups = groups.map((group) =>
+      group.id === landing.id
+        ? { ...group, exercises: [...group.exercises, ...missing.map(toInterval)] }
+        : group,
+    )
+  } else {
+    // Nothing to land in: the config is empty, so today's workout becomes the session.
+    // Straight sets, because that is how a workout is written -- 5x5 then 3x15 cannot be
+    // said with one round count for the group.
+    groups = [
+      {
+        id: WORKOUT_GROUP_ID,
+        name: workout.focus?.trim() || "Today's workout",
+        style: 'SETS',
+        rounds: 1,
+        restSeconds: 45,
+        roundRestSeconds: 90,
+        exercises: missing.map(toInterval),
+      },
+    ]
   }
 
-  return {
-    ...config,
-    groups: previous
-      ? config.groups.map((g) => (g.id === WORKOUT_GROUP_ID ? group : g))
-      : // First, because it is the day's actual work; anything else is extra.
-        [group, ...config.groups],
-  }
+  return { ...config, groups }
 }
 
 /**
- * Whether the workout has exercises the timer has not seen, or vice versa.
+ * Moves one of today's exercises into a group, or out of the session entirely.
  *
- * Only membership, never timings: a refresh keeps your seconds and sets, so a
- * difference in those is not something to nag about.
+ * `null` excludes it: the exercise stays on the workout, and stays untouched by the
+ * timer, which is what you want for the thing you are doing outside the app. The
+ * exclusion is remembered, or the next sync would put it straight back.
  */
-export function workoutDiffers(config: TimerConfig, workout: Workout | undefined): boolean {
-  if (!workout) return false
-  const group = findWorkoutGroup(config)
-  const here = new Set((group?.exercises ?? []).map((e) => e.sessionExerciseId).filter(Boolean))
-  const there = new Set(workout.exercises.map((e) => e.id))
-
-  if (here.size !== there.size) return true
-  for (const id of there) if (!here.has(id)) return true
-  return false
-}
-
-/** Every exercise in the config that is not yet a row on today's workout. */
-export function unlinkedExercises(config: TimerConfig): IntervalExercise[] {
-  return config.groups.flatMap((group) =>
-    group.exercises.filter((exercise) => !exercise.sessionExerciseId),
-  )
-}
-
-/** Writes ids back onto the exercises that were just created on the workout. */
-export function withSessionIds(
+export function assignToGroup(
   config: TimerConfig,
-  ids: Map<string, string>,
+  sessionExerciseId: string,
+  groupId: string | null,
+  fromWorkout: WorkoutExercise,
 ): TimerConfig {
-  if (ids.size === 0) return config
+  const current = groupOf(config, sessionExerciseId)
+  const moving =
+    current?.exercises.find((exercise) => exercise.sessionExerciseId === sessionExerciseId) ??
+    toInterval(fromWorkout)
+
+  const without = config.groups.map((group) => ({
+    ...group,
+    exercises: group.exercises.filter(
+      (exercise) => exercise.sessionExerciseId !== sessionExerciseId,
+    ),
+  }))
+
+  const excluded = config.excludedExerciseIds.filter((id) => id !== sessionExerciseId)
+
+  if (groupId === null) {
+    return { ...config, groups: without, excludedExerciseIds: [...excluded, sessionExerciseId] }
+  }
+
   return {
     ...config,
-    groups: config.groups.map((group) => ({
-      ...group,
-      exercises: group.exercises.map((exercise) =>
-        ids.has(exercise.id)
-          ? { ...exercise, sessionExerciseId: ids.get(exercise.id) ?? null }
-          : exercise,
-      ),
-    })),
+    excludedExerciseIds: excluded,
+    groups: without.map((group) =>
+      group.id === groupId ? { ...group, exercises: [...group.exercises, moving] } : group,
+    ),
   }
 }

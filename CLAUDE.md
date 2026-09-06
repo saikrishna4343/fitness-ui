@@ -125,7 +125,10 @@ outlives deploys and a NaN would hang the clock on one phase forever.
 - **The timer and today's workout are linked through `sessionExerciseId`** on each
   interval exercise (`src/lib/timerWorkout.ts`). It makes the sync idempotent, lets your
   timings survive a refresh from the workout, and is what the runner ticks against.
-  `syncFromWorkout()` pulls, and it is applied in a **`useMemo`, not an effect** — the
+  `syncFromWorkout()` only ever **adds and removes** — which group an exercise sits in is
+  the user's, so an exercise already in the config is never relocated, and one taken out
+  goes on `excludedExerciseIds` or the next merge would put it straight back. It is
+  applied in a **`useMemo`, not an effect** — the
   config the page renders *is* the merge of storage and today's workout, so there is no
   second render and no copy to fall out of step; edits round-trip because the merge
   preserves per-exercise values by session id. `pushToWorkout()` in `Timer.tsx` pushes and is **awaited
