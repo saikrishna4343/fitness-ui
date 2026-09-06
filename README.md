@@ -39,7 +39,7 @@ Two rules hold throughout that file:
 | `/food` | The food log for any date. Entries grouped by meal, each showing the time you ate. Add, edit, delete, and set that day's goal. |
 | `/workout` | The full workout for any date: tick exercises, record the weight and reps you actually did, add one-off exercises, complete or skip. |
 | `/plan` | The weekly split. Set each day's focus, mark rest days, add/edit/reorder exercises. |
-| `/timer` | Interval (HIIT) timer. Groups of exercises, each repeated for a number of rounds, with per-exercise work time, gaps, warm-up and cool-down — counted down out loud. |
+| `/timer` | Interval (HIIT) timer, wired to today's workout in both directions. Groups run as a circuit or as straight sets, with per-exercise work time, gaps, warm-up and cool-down — counted down out loud. |
 | `/coach` | An AI coach for meals and training. It reads your own log to answer, and can add exercises to today's workout when you ask. The same conversation is a tap away from every other screen, from the button in the bottom right. |
 | `/progress` | Calories and macros per day over 7/30/90 days, with a table view, plus streak and workout stats. |
 | `/settings` | Your profile, default calorie and macro goals, and your saved-foods library. |
@@ -219,6 +219,17 @@ the right way to get the same behaviour.
   that date, and never re-read — editing the plan must not rewrite a workout you already
   logged. "Load from plan" on the workout screen re-copies deliberately, and refuses once
   anything is ticked.
+- **The timer and today's workout are the same workout.** Load today's exercises into
+  the timer and each one arrives with its sets and, where it has one, its interval;
+  finish an exercise's last set and it is ticked on the Workout screen as you stand
+  there. Anything you build in the timer that is not on today gets added when you press
+  Start. The day is only marked complete when the timer actually covered all of it — a
+  ten-minute circuit alongside a planned eight-lift day has not done those lifts. The
+  switch on the timer turns the whole link off for a session you would rather not log.
+- **A group runs as a circuit or as straight sets.** A circuit is every exercise once
+  then round again; straight sets is one exercise at a time, all of its sets, then the
+  next. The second shape exists because a workout of 5×5 squats and 3×15 calf raises
+  cannot be described by one round count for the group.
 - **The interval timer is the one thing not in the database.** A timer config is a
   scratchpad you rewrite between sets, so it lives in localStorage — no schema, no policy,
   no migration. It is also the only screen that talks, via the browser's own speech

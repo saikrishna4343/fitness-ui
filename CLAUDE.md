@@ -121,6 +121,20 @@ outlives deploys and a NaN would hang the clock on one phase forever.
   name (`natural`/`neural`/`premium` up, `espeak`/`compact` down) because the API exposes
   no quality field; the user's pick and the beep level live
   under their own localStorage key so a Reset of the intervals does not clear them.
+- **The timer and today's workout are linked through `sessionExerciseId`** on each
+  interval exercise (`src/lib/timerWorkout.ts`). It makes the sync idempotent, lets your
+  timings survive a refresh from the workout, and is what the runner ticks against.
+  `syncFromWorkout()` pulls; `pushToWorkout()` in `Timer.tsx` pushes and is **awaited
+  before the clock starts** — the runner freezes its plan at mount, so an id arriving a
+  second later would never be ticked. The day is completed only when every workout
+  exercise was covered by the plan.
+- **`Phase.completesExercise`** marks the last work phase of an exercise (its final set,
+  or its last round in a circuit). The runner fires `onExerciseDone` when that phase
+  *ends*, which is when the next one begins — there is no phase-ended event, and waiting
+  for the session would land the tick ten minutes after the effort.
+- **Groups have a `style`**: `CIRCUIT` (round-robin, one round count for the group) or
+  `SETS` (one exercise at a time, sets per exercise). Straight sets exist because a
+  workout's per-exercise set counts cannot be expressed as a single group round count.
 - The plan is frozen in a `useMemo` for the length of a session; editing mid-workout must
   not move phase boundaries under a running clock.
 - Starting a session on a day with **no** exercises copies the intervals into today's

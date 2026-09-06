@@ -1,31 +1,51 @@
 /**
  * The interval (HIIT) timer.
  *
- * This is the one part of the app that is not server state: a timer config is a
- * personal scratchpad you rewrite between sets, and round-tripping every keystroke
- * through PostgREST would add a schema, an RLS policy and a migration for something
- * that never leaves the device. It lives in localStorage instead — see
- * `src/lib/timerStorage.ts`.
+ * The config is not server state: it is a personal scratchpad you rewrite between
+ * sets, and round-tripping every keystroke through PostgREST would add a schema, an
+ * RLS policy and a migration for something that never leaves the device. It lives in
+ * localStorage instead — see `src/lib/timerStorage.ts`.
+ *
+ * What *is* server state is the workout it drives. An exercise carrying a
+ * `sessionExerciseId` is the same exercise as the row on the Workout screen: finishing
+ * its last set here ticks it there, and adding it there brings it here.
  */
 
-/** One exercise in a group. `seconds` is the work interval, not a rep count. */
+/**
+ * How a group is run.
+ *
+ * `CIRCUIT` — round-robin: every exercise once, then again, `rounds` times. The HIIT
+ * shape, and what the timer did before it knew about workouts.
+ *
+ * `SETS` — one exercise at a time, all of its sets, then the next. The gym shape, and
+ * the only one that can represent a workout where the squats are 5×5 and the calf
+ * raises are 3×15 — a single `rounds` for the whole group cannot.
+ */
+export type GroupStyle = 'CIRCUIT' | 'SETS'
+
 export interface IntervalExercise {
   id: string
   name: string
+  /** The work interval, not a rep count. */
   seconds: number
+  /** `SETS` only. Ignored in a circuit, where the group's rounds apply to everyone. */
+  sets: number
+  /**
+   * The row on today's workout this stands for, when it came from there or was
+   * pushed there. Null for an exercise that exists only in the timer.
+   */
+  sessionExerciseId: string | null
 }
 
-/**
- * A block of exercises done back to back, repeated `rounds` times.
- *
- * `restSeconds` is the gap between two exercises inside a round; `roundRestSeconds`
- * is the longer gap between rounds. Both can be 0, which drops the phase entirely.
- */
 export interface IntervalGroup {
   id: string
   name: string
+  style: GroupStyle
+  /** `CIRCUIT` only: how many times through the whole group. */
   rounds: number
+  /** The short gap: between exercises in a circuit, between sets in `SETS`. */
   restSeconds: number
+  /** The long gap: between rounds in a circuit, between exercises in `SETS`. */
   roundRestSeconds: number
   exercises: IntervalExercise[]
 }
@@ -36,6 +56,13 @@ export interface TimerConfig {
   /** The gap after a whole group finishes, before the next one starts. */
   groupRestSeconds: number
   groups: IntervalGroup[]
+  /**
+   * Whether finishing work here writes back to today's workout.
+   *
+   * On by default, and worth being able to turn off: a quick five-minute circuit
+   * should not necessarily append five rows to a day you had planned properly.
+   */
+  syncWithWorkout: boolean
 }
 
 export type PhaseKind = 'WARMUP' | 'WORK' | 'REST' | 'ROUND_REST' | 'GROUP_REST' | 'COOLDOWN'
@@ -61,6 +88,14 @@ export interface Phase {
   exercises: number | null
   /** Seconds from the start of the whole session. Makes seeking a subtraction. */
   startsAt: number
+  /** Set on work phases: the exercise being worked, for writing back. */
+  exerciseId: string | null
+  sessionExerciseId: string | null
+  /**
+   * True on the last work phase of an exercise — its final set, or its last round.
+   * When this phase ends, that exercise is done and can be ticked on the workout.
+   */
+  completesExercise: boolean
 }
 
 export const PHASE_LABELS: Record<PhaseKind, string> = {
