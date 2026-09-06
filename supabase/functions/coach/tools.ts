@@ -21,6 +21,15 @@ type Db = any
 /** The caller, resolved once per request. */
 export interface CoachContext {
   userId: string
+  /**
+   * The caller's local calendar date, yyyy-MM-dd, sent by the browser.
+   *
+   * Not the server's: this function runs in UTC, and after 7pm in Chicago UTC has
+   * already rolled over. Logging dinner to tomorrow because of where the server sleeps
+   * is the kind of bug that quietly ruins a week of data. The app has the same rule --
+   * see `toIsoDate` in src/lib/format.ts.
+   */
+  today: string
 }
 
 export interface CoachTool {
@@ -37,8 +46,6 @@ function ok<T>(result: { data: unknown; error: { message: string } | null }): T 
   if (result.error) throw new Error(result.error.message)
   return result.data as T
 }
-
-const today = () => new Date().toISOString().slice(0, 10)
 
 export const TOOLS: CoachTool[] = [
   {
@@ -62,8 +69,8 @@ export const TOOLS: CoachTool[] = [
       properties: { date: { type: 'string', description: 'yyyy-MM-dd. Defaults to today.' } },
       additionalProperties: false,
     },
-    run: async (db, { date }) => {
-      const day = date ?? today()
+    run: async (db, { date }, ctx) => {
+      const day = date ?? ctx.today
       const rows = ok<unknown[]>(await db.rpc('daily_summary', { p_from: day, p_to: day }))
       return rows[0] ?? { date: day, empty: true }
     },
@@ -96,12 +103,12 @@ export const TOOLS: CoachTool[] = [
       properties: { date: { type: 'string', description: 'yyyy-MM-dd. Defaults to today.' } },
       additionalProperties: false,
     },
-    run: async (db, { date }) =>
+    run: async (db, { date }, ctx) =>
       ok(
         await db
           .from('food_entry')
           .select('id, meal, name, quantity, unit, calories, protein_g, carbs_g, fat_g, eaten_at')
-          .eq('entry_date', date ?? today())
+          .eq('entry_date', date ?? ctx.today)
           .order('eaten_at'),
       ),
   },
@@ -175,67 +182,101 @@ export const TOOLS: CoachTool[] = [
   },
 
   {
-    name: 'log_food_entry',
+    name: 'log_food',
     description:
-      'Adds one food entry to a day. Only call this when asked to log something. If the macros ' +
-      'are your estimate rather than a saved food, set estimated to true so the app can label it.',
+      'Logs one or more foods to a day. Call this when asked to log, add or record ' +
+      'something eaten — "log that", "add it to my food log". A meal is usually several ' +
+      'items: pass them all in one call rather than calling this repeatedly. Set ' +
+      'estimated to true on any item whose macros you worked out yourself rather than ' +
+      'read from search_saved_foods.',
     writes: true,
     input_schema: {
       type: 'object',
       properties: {
         date: { type: 'string', description: 'yyyy-MM-dd. Defaults to today.' },
-        meal: { type: 'string', enum: ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'] },
-        name: { type: 'string' },
-        quantity: { type: 'number' },
-        unit: { type: 'string', description: 'g, ml, serving, piece...' },
-        calories: { type: 'number' },
-        protein_g: { type: 'number' },
-        carbs_g: { type: 'number' },
-        fat_g: { type: 'number' },
-        estimated: { type: 'boolean' },
+        meal: {
+          type: 'string',
+          enum: ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'],
+          description: 'The meal these items belong to, unless an item overrides it.',
+        },
+        items: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 20,
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              quantity: { type: 'number' },
+              unit: { type: 'string', description: 'g, ml, serving, piece...' },
+              calories: { type: 'number' },
+              protein_g: { type: 'number' },
+              carbs_g: { type: 'number' },
+              fat_g: { type: 'number' },
+              meal: { type: 'string', enum: ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'] },
+              estimated: { type: 'boolean' },
+            },
+            required: ['name', 'quantity', 'unit', 'calories', 'protein_g', 'carbs_g', 'fat_g'],
+            additionalProperties: false,
+          },
+        },
       },
-      required: ['meal', 'name', 'quantity', 'unit', 'calories', 'protein_g', 'carbs_g', 'fat_g'],
+      required: ['meal', 'items'],
       additionalProperties: false,
     },
     run: async (db, input, ctx) => {
-      const date = input.date ?? today()
-      const row = ok<{ id: string }[]>(
+      const date = input.date ?? ctx.today
+      const eatenAt = new Date().toISOString()
+
+      const rows = ok<{ id: string; name: string }[]>(
         await db
           .from('food_entry')
-          .insert({
-            // food_entry.user_id is NOT NULL with no default -- unlike the coach's
-            // own tables, which default it to auth.uid(). RLS would reject a wrong
-            // one, but it still has to be supplied.
-            user_id: ctx.userId,
-            entry_date: date,
-            eaten_at: new Date().toISOString(),
-            meal: input.meal,
-            name: input.name,
-            quantity: input.quantity,
-            unit: input.unit,
-            calories: input.calories,
-            protein_g: input.protein_g,
-            carbs_g: input.carbs_g,
-            fat_g: input.fat_g,
-            notes: input.estimated ? 'Macros estimated by the coach' : null,
-          })
-          .select('id'),
+          .insert(
+            input.items.map((item: any) => ({
+              // food_entry.user_id is NOT NULL with no default -- unlike the coach's own
+              // tables, which default it to auth.uid(). RLS would reject a wrong one, but
+              // it still has to be supplied.
+              user_id: ctx.userId,
+              entry_date: date,
+              eaten_at: eatenAt,
+              meal: item.meal ?? input.meal,
+              name: item.name,
+              quantity: item.quantity,
+              unit: item.unit,
+              calories: item.calories,
+              protein_g: item.protein_g,
+              carbs_g: item.carbs_g,
+              fat_g: item.fat_g,
+              notes: item.estimated ? 'Macros estimated by the coach' : null,
+            })),
+          )
+          .select('id, name'),
       )
-      return { added: input.name, date, entry_ids: row.map((r) => r.id) }
+
+      return {
+        date,
+        logged: rows.map((row) => row.name),
+        // The ids make the app's undo a real delete rather than a guess at which rows.
+        entry_ids: rows.map((row) => row.id),
+        calories: input.items.reduce((total: number, item: any) => total + item.calories, 0),
+      }
     },
   },
 
   {
-    name: 'add_todays_exercises',
+    name: 'add_workout_exercises',
     description:
-      "Adds exercises to today's workout. Call this when asked to — \"add them to today\", " +
-      '"put that in my workout". Pass every exercise explicitly; never refer back to a list in ' +
-      'the conversation. Appends by default. mode "replace" clears the day first and REFUSES ' +
-      'if anything has already been ticked, because that day holds work they actually did.',
+      'Adds exercises to the workout on ONE date — today unless a date is given. Use for ' +
+      '"add them to today", "put that in Friday\'s workout", "give me this tomorrow". This ' +
+      'changes that one day only; use add_plan_exercises for something that should repeat ' +
+      'every week. Pass every exercise explicitly; never refer back to a list in the ' +
+      'conversation. Appends by default. mode "replace" clears the day first and REFUSES if ' +
+      'anything has already been ticked, because that day holds work they actually did.',
     writes: true,
     input_schema: {
       type: 'object',
       properties: {
+        date: { type: 'string', description: 'yyyy-MM-dd. Defaults to today.' },
         mode: { type: 'string', enum: ['append', 'replace'], description: 'Default append.' },
         exercises: {
           type: 'array',
@@ -258,10 +299,11 @@ export const TOOLS: CoachTool[] = [
       required: ['exercises'],
       additionalProperties: false,
     },
-    run: async (db, input) => {
-      const date = today()
+    run: async (db, input, ctx) => {
+      const date = input.date ?? ctx.today
       // The first read of a date materialises the session from the plan, exactly as
-      // opening the Workout screen does.
+      // opening the Workout screen does -- which is what makes a future date work at
+      // all: the day does not exist until something asks for it.
       const sessionId = ok<string>(await db.rpc('ensure_session', { p_date: date }))
 
       const session = ok<{ rest_day: boolean; status: string }>(
@@ -331,6 +373,116 @@ export const TOOLS: CoachTool[] = [
         // which rows to remove.
         added_ids: added.map((a) => a.id),
         skipped_as_duplicates: skipped,
+      }
+    },
+  },
+  {
+    name: 'add_plan_exercises',
+    description:
+      'Adds exercises to a day of the WEEKLY PLAN — the template every week is built ' +
+      'from, not one date. Use when they say "every Monday", "add this to my plan", "make ' +
+      'Wednesday a leg day". A plan change shows up on that weekday from now on, and does ' +
+      'NOT alter a workout already materialised for a date, including today. If it is ' +
+      'unclear whether they mean one day or every week, ask before writing.',
+    writes: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        day_of_week: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 7,
+          description: 'ISO: 1 Monday ... 7 Sunday.',
+        },
+        focus: { type: 'string', description: 'Optional. Renames the day, e.g. "Push".' },
+        rest_day: { type: 'boolean', description: 'Optional. Set false when adding work.' },
+        exercises: {
+          type: 'array',
+          maxItems: 20,
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              sets: { type: 'integer' },
+              reps: { type: 'string', description: 'e.g. "8-10", "12", "45s"' },
+              weight_kg: { type: ['number', 'null'] },
+              notes: { type: ['string', 'null'] },
+            },
+            required: ['name', 'sets', 'reps'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['day_of_week'],
+      additionalProperties: false,
+    },
+    run: async (db, input) => {
+      // Creates the plan and all seven days on first call, exactly as the Plan screen does.
+      const planId = ok<string>(await db.rpc('ensure_plan'))
+
+      const exercises = input.exercises ?? []
+      if (input.focus !== undefined || input.rest_day !== undefined || exercises.length > 0) {
+        const patch: Record<string, unknown> = {}
+        if (input.focus !== undefined) patch.focus = input.focus
+        // A rest day holding exercises reads as a bug on the Plan screen, so adding work
+        // to one clears the flag unless they explicitly asked for a rest day.
+        if (input.rest_day !== undefined) patch.rest_day = input.rest_day
+        else if (exercises.length > 0) patch.rest_day = false
+
+        if (Object.keys(patch).length > 0) {
+          ok(
+            await db
+              .from('plan_day')
+              .update(patch)
+              .eq('plan_id', planId)
+              .eq('day_of_week', input.day_of_week),
+          )
+        }
+      }
+
+      const existing = ok<{ name: string }[]>(
+        await db
+          .from('plan_day')
+          .select('plan_exercise(name)')
+          .eq('plan_id', planId)
+          .eq('day_of_week', input.day_of_week)
+          .single(),
+      ) as unknown as { plan_exercise: { name: string }[] }
+
+      const already = new Set(
+        (existing.plan_exercise ?? []).map((e) => e.name.trim().toLowerCase()),
+      )
+      const added: string[] = []
+      const skipped: string[] = []
+
+      // Sequential: add_plan_exercise assigns order_index from what is already there.
+      for (const exercise of exercises) {
+        if (already.has(exercise.name.trim().toLowerCase())) {
+          skipped.push(exercise.name)
+          continue
+        }
+        ok(
+          await db.rpc('add_plan_exercise', {
+            p_day_of_week: input.day_of_week,
+            p_name: exercise.name.trim(),
+            p_sets: exercise.sets,
+            p_reps: exercise.reps,
+            p_weight: exercise.weight_kg ?? null,
+            p_notes: exercise.notes ?? null,
+          }),
+        )
+        already.add(exercise.name.trim().toLowerCase())
+        added.push(exercise.name)
+      }
+
+      return {
+        day_of_week: input.day_of_week,
+        focus: input.focus,
+        added,
+        skipped_as_duplicates: skipped,
+        note:
+          'The weekly plan changed. A workout already created for a date is a snapshot ' +
+          'and is unaffected.',
       }
     },
   },

@@ -32,6 +32,7 @@ export const TOOL_ACTIVITY: Record<string, string> = {
   get_training_history: 'Reading your training history',
   get_weekly_plan: 'Checking your weekly plan',
   search_saved_foods: 'Searching your saved foods',
-  log_food_entry: 'Logging that',
-  add_todays_exercises: "Adding to today's workout",
+  log_food: 'Logging that',
+  add_workout_exercises: 'Adding to your workout',
+  add_plan_exercises: 'Updating your weekly plan',
 }
