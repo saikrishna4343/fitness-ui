@@ -120,8 +120,13 @@ export function AppShell() {
       )}
 
       <main className="lg:pl-64">
-        {/* Bottom padding clears the floating coach button on short screens. */}
-        <div className="mx-auto w-full max-w-5xl px-4 py-6 pb-24 sm:px-6 lg:py-10">
+        {/*
+          Left-aligned rather than centred in the space beside the sidebar. Centring a
+          5xl column inside a wide viewport left a channel of empty page between the nav
+          and the first card that read as a mistake -- the content now starts where the
+          nav ends and grows rightwards. Bottom padding clears the floating coach button.
+        */}
+        <div className="w-full max-w-6xl px-4 py-6 pb-24 sm:px-6 lg:py-10">
           <Outlet />
         </div>
       </main>
