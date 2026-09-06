@@ -143,12 +143,6 @@ Deno.serve(async (req) => {
     },
   )
 
-  // Resolves the caller and validates the token in one call. RLS would refuse a
-  // forged one anyway, but failing here gives a usable message and costs nothing.
-  const { data: userData, error: userError } = await db.auth.getUser()
-  if (userError || !userData?.user) return json({ error: 'Your session has expired' }, 401)
-  const ctx: CoachContext = { userId: userData.user.id, today }
-
   let message: string
   // The browser's own calendar date. The function runs in UTC, which is a different
   // day from about 7pm Central onwards -- close enough to dinner to matter.
@@ -162,6 +156,12 @@ Deno.serve(async (req) => {
   }
   if (!message) return json({ error: 'Say something first' }, 400)
   if (message.length > 4000) return json({ error: 'That message is too long' }, 400)
+
+  // Resolves the caller and validates the token in one call. RLS would refuse a
+  // forged one anyway, but failing here gives a usable message and costs nothing.
+  const { data: userData, error: userError } = await db.auth.getUser()
+  if (userError || !userData?.user) return json({ error: 'Your session has expired' }, 401)
+  const ctx: CoachContext = { userId: userData.user.id, today }
 
   // Claimed before the API call and in one statement, so two tabs cannot both
   // read the same count and both proceed.
@@ -224,7 +224,10 @@ Deno.serve(async (req) => {
               // on every request, since the string carries the weekday too.
               { type: 'text', text: todayLine(today) },
             ],
-            tools: TOOL_DEFINITIONS,
+            // The definitions are structural JSON schemas, which is all the API wants;
+            // the SDK's own Tool type is narrower than the shape they are declared in.
+            // deno-lint-ignore no-explicit-any
+            tools: TOOL_DEFINITIONS as any,
             // deno-lint-ignore no-explicit-any
             messages: messages as any,
           })

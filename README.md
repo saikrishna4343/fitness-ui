@@ -143,6 +143,10 @@ single file. That bundle is generated and gitignored -- edit the three files and
 it, never the bundle. The API key goes in **Edge Functions -> Secrets** as
 `ANTHROPIC_API_KEY`.
 
+The edge function is outside `tsc`'s scope, so `npm run build` says nothing about it.
+Type-check it with `npm run coach:check`, which runs Deno's checker over the real
+sources -- not over `_bundle.ts`, whose annotations esbuild has already stripped.
+
 `supabase/config.toml` is committed; `supabase/.temp`, which records the project this
 checkout is linked to, is not. Deploying does not need Docker -- that is only for
 `supabase start`. Logs are under **Edge Functions -> coach -> Logs** in the dashboard, or

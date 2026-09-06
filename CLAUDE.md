@@ -166,7 +166,11 @@ outlives deploys and a NaN would hang the clock on one phase forever.
 `supabase/functions/coach/` is a Deno edge function and the single reason this project has
 any backend at all: the Anthropic API key cannot ship in the bundle. It is **outside
 `tsc`'s scope** (`tsconfig.app.json` includes only `src`), so `npm run build` proves
-nothing about it — check it with `deno check supabase/functions/coach/index.ts`.
+nothing about it — run **`npm run coach:check`**, which type-checks it with Deno.
+
+Check the **sources**, never `_bundle.ts`: esbuild strips type annotations, so Deno
+re-infers everything in the bundle and reports dozens of errors that do not exist in the
+code. `npm run coach:bundle` regenerates the bundle for the dashboard editor.
 
 - **The security model is the JWT, not the tool code.** The function builds its Supabase
   client from the caller's `Authorization` header, so every tool query runs as that user
