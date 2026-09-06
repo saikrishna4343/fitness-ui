@@ -121,12 +121,13 @@ export function AppShell() {
 
       <main className="lg:pl-64">
         {/*
-          Left-aligned rather than centred in the space beside the sidebar. Centring a
-          5xl column inside a wide viewport left a channel of empty page between the nav
-          and the first card that read as a mistake -- the content now starts where the
-          nav ends and grows rightwards. Bottom padding clears the floating coach button.
+          Left-aligned rather than centred in the space beside the sidebar: centring a
+          column inside a wide viewport left a channel of empty page between the nav and
+          the first card that read as a mistake. The wide-screen left padding is what
+          keeps the correction from overshooting -- a margin against the nav, not a gap.
+          Bottom padding clears the floating coach button.
         */}
-        <div className="w-full max-w-6xl px-4 py-6 pb-24 sm:px-6 lg:py-10">
+        <div className="w-full max-w-6xl px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-10 xl:pl-20">
           <Outlet />
         </div>
       </main>
