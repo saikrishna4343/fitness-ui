@@ -1,37 +1,39 @@
 /**
  * The coach.
  *
- * This is the only server-side code in the app, and it exists for exactly one
- * reason: the Anthropic API key cannot ship in the browser bundle. The anon key
- * there is public by design and RLS protects the data behind it; an API key has
- * no such protection, and anyone with DevTools could spend it.
+ * This is the only server-side code in the app, and it exists for exactly one reason:
+ * a model provider's API key cannot ship in the browser bundle. The anon key there is
+ * public by design and RLS protects the data behind it; an API key has no such
+ * protection, and anyone with DevTools could spend it.
  *
  * Deploy:
- *   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+ *   supabase secrets set GEMINI_API_KEY=...        (or ANTHROPIC_API_KEY)
+ *   supabase secrets set COACH_MODEL=gemini-3.8-flash
  *   supabase functions deploy coach
  *
  * SUPABASE_URL and SUPABASE_ANON_KEY are injected by the platform; there is no
  * service-role key here on purpose — see the note on `db` below.
  */
-import Anthropic from 'npm:@anthropic-ai/sdk'
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { runAnthropicTurn } from './anthropic.ts'
+import { runGeminiTurn } from './gemini.ts'
 import { COACH_PROMPT } from './prompt.ts'
-import { TOOL_DEFINITIONS, TOOLS_BY_NAME, type CoachContext } from './tools.ts'
+import { TOOLS, type CoachContext } from './tools.ts'
+import type { TurnMessage, TurnRequest } from './providers.ts'
 
-const MODEL = 'claude-opus-5'
-/** A cap, not a target. The prompt asks for two or three sentences. */
-const MAX_TOKENS = 8192
-/** Read tool, write tool, answer. More than this is a loop, not a conversation. */
-const MAX_TURNS = 6
 /**
- * Replay is text-only, short, and recent -- see `replayable` below for why.
- * The table keeps everything; these numbers only govern what is re-sent.
+ * Which model answers, and therefore which provider.
+ *
+ * An environment variable, so switching is a secret change rather than a code change —
+ * which matters when the reason to switch is a free tier running out mid-session.
+ * Anything starting "claude" goes to Anthropic; everything else to Gemini.
  */
+const MODEL = Deno.env.get('COACH_MODEL')?.trim() || 'gemini-3.8-flash'
+
+/** Messages replayed to the model. Older ones stay in the table for the UI. */
 const REPLAY_MESSAGES = 12
 const REPLAY_WINDOW_HOURS = 12
 const DAILY_LIMIT = 40
-
-const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') })
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -48,13 +50,12 @@ const json = (body: unknown, status = 200) =>
 /**
  * The one thing the model cannot work out for itself.
  *
- * Without this, "add these tomorrow" is unanswerable: an LLM has no clock, and asking
- * the user what day it is would be absurd. Sent as its own system block, after the
- * cache breakpoint, so a date that changes daily does not invalidate a prompt that does not.
+ * Without this, "add these tomorrow" is unanswerable: a model has no clock, and asking
+ * the user what day it is would be absurd.
  */
 function todayLine(date: string): string {
-  // Parsed as UTC midnight so the weekday is read off the date as given, with no
-  // second timezone shift applied to a date that has already been localised once.
+  // Parsed as UTC midnight so the weekday is read off the date as given, with no second
+  // timezone shift applied to a date that has already been localised once.
   const at = new Date(`${date}T00:00:00Z`)
   const weekday = at.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' })
   // ISO day of week, which is what add_plan_exercises takes: 1 Monday ... 7 Sunday.
@@ -68,51 +69,45 @@ const isDate = (value: unknown): value is string =>
   /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   !Number.isNaN(new Date(`${value}T00:00:00Z`).getTime())
 
-/** Text blocks only, as the model's own message shape. */
-function textOnly(content: unknown): { type: 'text'; text: string }[] {
-  if (typeof content === 'string') {
-    return content.trim() ? [{ type: 'text', text: content }] : []
-  }
-  if (!Array.isArray(content)) return []
+/** The readable text of a stored turn. */
+function textOnly(content: unknown): string {
+  if (typeof content === 'string') return content.trim()
+  if (!Array.isArray(content)) return ''
   return content
     .filter(
       (block): block is { type: 'text'; text: string } =>
         typeof block === 'object' &&
         block !== null &&
         (block as { type?: string }).type === 'text' &&
-        typeof (block as { text?: string }).text === 'string' &&
-        (block as { text: string }).text.trim().length > 0,
+        typeof (block as { text?: string }).text === 'string',
     )
-    .map((block) => ({ type: 'text', text: block.text }))
+    .map((block) => block.text)
+    .join('\n')
+    .trim()
 }
 
 /**
  * What gets re-sent to the model, and deliberately not much.
  *
- * Tool calls and their results are stripped. They are the expensive part by a wide
- * margin -- three weeks of training history is a page of JSON, and replaying it on
- * every message pays for the same rows again and again -- and they are the part the
- * model can simply fetch again, fresher, for the price of one tool call. What it
- * cannot fetch again is what was *said*: "add them to today" only means anything
- * next to the message listing them. So the words stay and the data goes.
+ * Only the words. Tool results were the expensive part by a wide margin -- three weeks
+ * of training history is a page of JSON, billed again on every message since history
+ * sits after any cache breakpoint -- and they are the part the model can simply fetch
+ * again, fresher, for the price of one tool call. What it cannot fetch again is what
+ * was *said*: "add them to today" means nothing next to the message listing them.
  *
- * History also expires. A conversation from this morning still applies at dinner;
- * one from last week is about a different day and is not worth paying to re-read.
+ * Being text-only is also what lets the provider change without the stored conversation
+ * meaning anything different.
  */
-function replayable(
-  rows: { role: 'user' | 'assistant'; content: unknown }[],
-): { role: 'user' | 'assistant'; content: unknown }[] {
+function replayable(rows: { role: 'user' | 'assistant'; content: unknown }[]): TurnMessage[] {
   const kept = rows
     .slice()
     .reverse()
-    .map((row) => ({ role: row.role, content: textOnly(row.content) }))
-    .filter((row) => row.content.length > 0)
+    .map((row) => ({ role: row.role, text: textOnly(row.content) }))
+    .filter((row) => row.text.length > 0)
     .slice(-REPLAY_MESSAGES)
 
-  // A turn that was nothing but tool traffic leaves an assistant message at the
-  // front once the tool blocks are gone, and the API requires a user message first.
+  // The first message must be from the user.
   while (kept.length > 0 && kept[0].role === 'assistant') kept.shift()
-
   return kept
 }
 
@@ -123,15 +118,11 @@ Deno.serve(async (req) => {
   const auth = req.headers.get('Authorization')
   if (!auth) return json({ error: 'Not signed in' }, 401)
 
-  if (!Deno.env.get('ANTHROPIC_API_KEY')) {
-    return json({ error: 'The coach is not configured: ANTHROPIC_API_KEY is not set.' }, 503)
-  }
-
   /**
-   * Built from the caller's own JWT, and this is the whole security model: every
-   * tool query runs as that user, so row level security scopes it in the database.
-   * A service-role client here would bypass every policy and make the model's
-   * reach a matter of how carefully the tools were written.
+   * Built from the caller's own JWT, and this is the whole security model: every tool
+   * query runs as that user, so row level security scopes it in the database. A
+   * service-role client here would bypass every policy and make the model's reach a
+   * matter of how carefully the tools were written.
    */
   const db = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -144,8 +135,8 @@ Deno.serve(async (req) => {
   )
 
   let message: string
-  // The browser's own calendar date. The function runs in UTC, which is a different
-  // day from about 7pm Central onwards -- close enough to dinner to matter.
+  // The browser's own calendar date. The function runs in UTC, which is a different day
+  // from about 7pm Central onwards -- close enough to dinner to matter.
   let today = new Date().toISOString().slice(0, 10)
   try {
     const body = await req.json()
@@ -157,14 +148,14 @@ Deno.serve(async (req) => {
   if (!message) return json({ error: 'Say something first' }, 400)
   if (message.length > 4000) return json({ error: 'That message is too long' }, 400)
 
-  // Resolves the caller and validates the token in one call. RLS would refuse a
-  // forged one anyway, but failing here gives a usable message and costs nothing.
+  // Resolves the caller and validates the token in one call. RLS would refuse a forged
+  // one anyway, but failing here gives a usable message and costs nothing.
   const { data: userData, error: userError } = await db.auth.getUser()
   if (userError || !userData?.user) return json({ error: 'Your session has expired' }, 401)
   const ctx: CoachContext = { userId: userData.user.id, today }
 
-  // Claimed before the API call and in one statement, so two tabs cannot both
-  // read the same count and both proceed.
+  // Claimed before the API call and in one statement, so two tabs cannot both read the
+  // same count and both proceed.
   const turn = await db.rpc('coach_take_turn', { p_limit: DAILY_LIMIT })
   if (turn.error) return json({ error: turn.error.message }, 401)
   const claim = turn.data?.[0]
@@ -185,18 +176,6 @@ Deno.serve(async (req) => {
     .limit(REPLAY_MESSAGES * 4)
   if (history.error) return json({ error: history.error.message }, 400)
 
-  const messages: { role: 'user' | 'assistant'; content: unknown }[] = [
-    ...replayable(history.data ?? []),
-    { role: 'user' as const, content: [{ type: 'text', text: message }] },
-  ]
-
-  // Everything produced this exchange, written to the table in full: the transcript
-  // is the record of what the coach actually did, and the loop below needs the tool
-  // blocks intact while it runs. Only the *replay* drops them.
-  const transcript: { role: string; content: unknown }[] = [
-    { role: 'user', content: [{ type: 'text', text: message }] },
-  ]
-
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
@@ -204,98 +183,50 @@ Deno.serve(async (req) => {
       const send = (event: unknown) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
 
-      let inputTokens = 0
-      let outputTokens = 0
-
       try {
-        for (let turnIndex = 0; turnIndex < MAX_TURNS; turnIndex += 1) {
-          const run = anthropic.messages.stream({
-            model: MODEL,
-            max_tokens: MAX_TOKENS,
-            // Cheap and quick for chat. The daily brief will want "high".
-            output_config: { effort: 'low' },
-            // The cached prefix. Tools render before system, so one breakpoint
-            // here covers both -- and both must be byte-identical between
-            // requests or the cache silently misses.
-            system: [
-              { type: 'text', text: COACH_PROMPT, cache_control: { type: 'ephemeral', ttl: '1h' } },
-              // After the breakpoint on purpose: the date changes daily, and putting it
-              // inside the cached block would throw the cache away every midnight -- and
-              // on every request, since the string carries the weekday too.
-              { type: 'text', text: todayLine(today) },
-            ],
-            // The definitions are structural JSON schemas, which is all the API wants;
-            // the SDK's own Tool type is narrower than the shape they are declared in.
-            // deno-lint-ignore no-explicit-any
-            tools: TOOL_DEFINITIONS as any,
-            // deno-lint-ignore no-explicit-any
-            messages: messages as any,
-          })
-
-          run.on('text', (delta: string) => send({ type: 'text', delta }))
-
-          const reply = await run.finalMessage()
-          inputTokens += reply.usage?.input_tokens ?? 0
-          outputTokens += reply.usage?.output_tokens ?? 0
-
-          messages.push({ role: 'assistant', content: reply.content })
-          transcript.push({ role: 'assistant', content: reply.content })
-
-          if (reply.stop_reason === 'refusal') {
-            send({ type: 'error', message: 'The model declined to answer that one.' })
-            break
-          }
-          if (reply.stop_reason !== 'tool_use') break
-
-          // Every tool_result goes back in ONE user message. Splitting them
-          // across several teaches the model to stop calling tools in parallel.
-          const results: unknown[] = []
-          for (const block of reply.content) {
-            if (block.type !== 'tool_use') continue
-
-            const tool = TOOLS_BY_NAME.get(block.name)
-            send({ type: 'tool', name: block.name, writes: tool?.writes ?? false })
-
-            try {
-              if (!tool) throw new Error(`No tool named ${block.name}`)
-              const result = await tool.run(db, block.input ?? {}, ctx)
-              results.push({
-                type: 'tool_result',
-                tool_use_id: block.id,
-                content: JSON.stringify(result),
-              })
-              if (tool.writes) send({ type: 'wrote', name: block.name, result })
-            } catch (error) {
-              // Handed back as a failed result rather than thrown: the model can
-              // explain the failure, which is more useful than a dead stream.
-              results.push({
-                type: 'tool_result',
-                tool_use_id: block.id,
-                is_error: true,
-                content: error instanceof Error ? error.message : 'Tool failed',
-              })
-            }
-          }
-
-          messages.push({ role: 'user', content: results })
-          transcript.push({ role: 'user', content: results })
+        const request: TurnRequest = {
+          model: MODEL,
+          system: `${COACH_PROMPT}\n\n${todayLine(today)}`,
+          history: replayable(history.data ?? []),
+          message,
+          tools: TOOLS,
+          db,
+          ctx,
+          onText: (delta) => send({ type: 'text', delta }),
+          onTool: (name, writes) => send({ type: 'tool', name, writes }),
+          onWrote: (name, result) => send({ type: 'wrote', name, result }),
         }
 
+        const result = MODEL.startsWith('claude')
+          ? await runAnthropicTurn(request)
+          : await runGeminiTurn(request)
+
+        if (result.refused) {
+          send({ type: 'error', message: 'The model declined to answer that one.' })
+        }
+
+        // Both turns, as text. The tool traffic is not stored: it is never replayed, and
+        // keeping one provider's block format in the table would tie the transcript to
+        // whichever model happened to write it.
         const now = Date.now()
         await db.from('coach_message').insert(
-          transcript.map((row, index) => ({
-            role: row.role,
-            content: row.content,
-            // Explicit and increasing: a batch insert would otherwise share one
-            // now() and the replay order would be undefined.
-            created_at: new Date(now + index * 10).toISOString(),
-          })),
+          [
+            { role: 'user', content: [{ type: 'text', text: message }] },
+            { role: 'assistant', content: [{ type: 'text', text: result.text }] },
+          ]
+            .filter((row) => textOnly(row.content).length > 0)
+            // Explicit and increasing: a batch insert would otherwise share one now()
+            // and the replay order would be undefined.
+            .map((row, index) => ({ ...row, created_at: new Date(now + index * 10).toISOString() })),
         )
-        await db.rpc('coach_record_usage', { p_input: inputTokens, p_output: outputTokens })
+        await db.rpc('coach_record_usage', {
+          p_input: result.inputTokens,
+          p_output: result.outputTokens,
+        })
 
         send({ type: 'done' })
       } catch (error) {
-        console.error('[coach]', error)
+        console.error('[coach]', MODEL, error)
         send({
           type: 'error',
           message: error instanceof Error ? error.message : 'The coach could not answer',

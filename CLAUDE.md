@@ -172,6 +172,15 @@ Check the **sources**, never `_bundle.ts`: esbuild strips type annotations, so D
 re-infers everything in the bundle and reports dozens of errors that do not exist in the
 code. `npm run coach:bundle` regenerates the bundle for the dashboard editor.
 
+- **Two providers behind one seam** (`providers.ts`): `COACH_MODEL` picks the model and
+  therefore the provider — `claude*` goes to `anthropic.ts`, anything else to
+  `gemini.ts`. What makes the swap cheap is that replay is text-only, so no provider's
+  content-block format ever reaches the database. Gemini does **not** stream here (its
+  function-call arguments arrive as deltas to reassemble; guessing that wrong fails like
+  a stupid model rather than a bug) and it has no prompt caching, so the system prompt is
+  billed in full every turn. `simplifySchema()` strips the JSON Schema keywords Gemini
+  rejects — it takes only type/properties/required/items/enum/description, and no union
+  types.
 - **The security model is the JWT, not the tool code.** The function builds its Supabase
   client from the caller's `Authorization` header, so every tool query runs as that user
   under existing RLS. There is no service-role key anywhere in it, and adding one would
