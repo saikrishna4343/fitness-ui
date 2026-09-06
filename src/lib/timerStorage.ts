@@ -1,22 +1,30 @@
-import { defaultSound, type BeepLevel, type SoundSettings } from '@/lib/speech'
-import type { IntervalExercise, IntervalGroup, TimerConfig } from '@/types/timer'
+import type { GroupStyle, IntervalExercise, IntervalGroup, TimerConfig } from '@/types/timer'
 
 const KEY = 'fitness-ui:interval-timer'
-const SOUND_KEY = 'fitness-ui:interval-timer-sound'
 const SESSION_KEY = 'fitness-ui:interval-timer-session'
+
+/**
+ * The group that mirrors today's workout.
+ *
+ * A fixed id rather than a uuid, because it has to be findable across reloads and
+ * across days: this is the one group the app owns and keeps in step with the Workout
+ * screen, and everything else in the config belongs to the user.
+ */
+export const WORKOUT_GROUP_ID = 'todays-workout'
 
 export function newId(): string {
   return crypto.randomUUID()
 }
 
 export function newExercise(name = '', seconds = 40): IntervalExercise {
-  return { id: newId(), name, seconds }
+  return { id: newId(), name, seconds, sets: 3, sessionExerciseId: null }
 }
 
 export function newGroup(index: number): IntervalGroup {
   return {
     id: newId(),
     name: `Group ${index + 1}`,
+    style: 'CIRCUIT',
     rounds: 3,
     restSeconds: 20,
     roundRestSeconds: 60,
@@ -29,6 +37,9 @@ export function defaultConfig(): TimerConfig {
     warmupSeconds: 60,
     cooldownSeconds: 90,
     groupRestSeconds: 90,
+    syncWithWorkout: true,
+    excludedExerciseIds: [],
+    groupNumbers: {},
     groups: [newGroup(0)],
   }
 }
@@ -67,6 +78,9 @@ function parse(raw: unknown): TimerConfig | null {
               name: typeof exercise.name === 'string' ? exercise.name : '',
               // A zero-second exercise is dropped by the plan builder, so the floor is 1.
               seconds: Math.max(1, seconds(exercise.seconds, 40)),
+              sets: Math.min(20, Math.max(1, seconds(exercise.sets, 3))),
+              sessionExerciseId:
+                typeof exercise.sessionExerciseId === 'string' ? exercise.sessionExerciseId : null,
             },
           ]
         })
@@ -76,6 +90,8 @@ function parse(raw: unknown): TimerConfig | null {
       {
         id: typeof group.id === 'string' ? group.id : newId(),
         name: typeof group.name === 'string' ? group.name : 'Group',
+        // Configs written before the timer knew about sets are all circuits.
+        style: group.style === 'SETS' ? 'SETS' : ('CIRCUIT' as GroupStyle),
         rounds: Math.min(50, Math.max(1, seconds(group.rounds, 3))),
         restSeconds: seconds(group.restSeconds, 20),
         roundRestSeconds: seconds(group.roundRestSeconds, 60),
@@ -88,6 +104,22 @@ function parse(raw: unknown): TimerConfig | null {
     warmupSeconds: seconds(source.warmupSeconds, 60),
     cooldownSeconds: seconds(source.cooldownSeconds, 90),
     groupRestSeconds: seconds(source.groupRestSeconds, 90),
+    // Absent in configs written before the two screens were linked. Defaulting it on
+    // is the point of the feature; the switch is there for the exceptions.
+    syncWithWorkout: source.syncWithWorkout !== false,
+    excludedExerciseIds: Array.isArray(source.excludedExerciseIds)
+      ? source.excludedExerciseIds.filter((id): id is string => typeof id === 'string')
+      : [],
+    groupNumbers:
+      typeof source.groupNumbers === 'object' && source.groupNumbers !== null
+        ? Object.fromEntries(
+            Object.entries(source.groupNumbers as Record<string, unknown>).flatMap(([id, value]) =>
+              typeof value === 'number' && Number.isFinite(value)
+                ? [[id, Math.min(20, Math.max(0, Math.round(value)))]]
+                : [],
+            ),
+          )
+        : {},
     groups,
   }
 }
@@ -110,45 +142,6 @@ export function saveConfig(config: TimerConfig): void {
   }
 }
 
-// ------------------------------------------------------------------ sound
-
-const BEEP_LEVELS: BeepLevel[] = ['off', 'normal', 'loud']
-
-/**
- * Kept apart from the config: which voice sounds good is a property of the device you
- * are holding, not of the workout, so it survives a Reset of the intervals.
- */
-export function loadSound(): SoundSettings {
-  try {
-    const raw = localStorage.getItem(SOUND_KEY)
-    if (!raw) return defaultSound
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== 'object' || parsed === null) return defaultSound
-    const source = parsed as Record<string, unknown>
-
-    return {
-      voiceURI: typeof source.voiceURI === 'string' ? source.voiceURI : null,
-      rate:
-        typeof source.rate === 'number' && Number.isFinite(source.rate)
-          ? Math.min(2, Math.max(0.5, source.rate))
-          : defaultSound.rate,
-      beeps: BEEP_LEVELS.includes(source.beeps as BeepLevel)
-        ? (source.beeps as BeepLevel)
-        : defaultSound.beeps,
-    }
-  } catch {
-    return defaultSound
-  }
-}
-
-export function saveSound(settings: SoundSettings): void {
-  try {
-    localStorage.setItem(SOUND_KEY, JSON.stringify(settings))
-  } catch {
-    /* nothing to do */
-  }
-}
-
 // ------------------------------------------------------------------ session
 
 /** Where a running session had got to, so a reload does not throw the workout away. */
@@ -158,8 +151,8 @@ export interface SavedSession {
   elapsed: number
   savedAt: number
   /**
-   * The workout session this timer filled in, when today had nothing planned. Kept in
-   * the snapshot so a session resumed after a reload can still mark it complete.
+   * The workout session this timer is driving. Kept in the snapshot so a session
+   * resumed after a reload still ticks and completes the right workout.
    */
   linkedWorkoutId: string | null
 }

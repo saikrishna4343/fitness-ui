@@ -119,8 +119,34 @@ outlives deploys and a NaN would hang the clock on one phase forever.
   call it. "Best available" is `PREFERRED_VOICE`, named outright — Google UK English
   Male, which Chrome ships and speaks over the network. Everything after it is ranked by
   name (`natural`/`neural`/`premium` up, `espeak`/`compact` down) because the API exposes
-  no quality field; the user's pick and the beep level live
-  under their own localStorage key so a Reset of the intervals does not clear them.
+  no quality field; there is no voice picker and no stored
+  preference -- `defaultSound` is passed straight to the runner, and `voiceURI: null`
+  resolves to `PREFERRED_VOICE` (Google UK English Male) or the best ranked fallback.
+- **The timer and today's workout are linked through `sessionExerciseId`** on each
+  interval exercise (`src/lib/timerWorkout.ts`). It makes the sync idempotent, lets your
+  timings survive a refresh from the workout, and is what the runner ticks against.
+  Grouping is by **typed number** (`config.groupNumbers`, keyed by session exercise id):
+  same number, same group, 0 to leave one out, applied by `breakIntoGroups()` when the
+  button is pressed. The numbers are an intention held apart from the groups, so a whole
+  list can be renumbered without the session rearranging mid-edit. A rebuild preserves
+  per-exercise seconds, each group's rests, and any group the user built themselves.
+  `syncFromWorkout()` only ever **adds and removes** — which group an exercise sits in is
+  the user's, so an exercise already in the config is never relocated, and one taken out
+  goes on `excludedExerciseIds` or the next merge would put it straight back. It is
+  applied in a **`useMemo`, not an effect** — the
+  config the page renders *is* the merge of storage and today's workout, so there is no
+  second render and no copy to fall out of step; edits round-trip because the merge
+  preserves per-exercise values by session id. `pushToWorkout()` in `Timer.tsx` pushes and is **awaited
+  before the clock starts** — the runner freezes its plan at mount, so an id arriving a
+  second later would never be ticked. The day is completed only when every workout
+  exercise was covered by the plan.
+- **`Phase.completesExercise`** marks the last work phase of an exercise (its final set,
+  or its last round in a circuit). The runner fires `onExerciseDone` when that phase
+  *ends*, which is when the next one begins — there is no phase-ended event, and waiting
+  for the session would land the tick ten minutes after the effort.
+- **Groups have a `style`**: `CIRCUIT` (round-robin, one round count for the group) or
+  `SETS` (one exercise at a time, sets per exercise). Straight sets exist because a
+  workout's per-exercise set counts cannot be expressed as a single group round count.
 - The plan is frozen in a `useMemo` for the length of a session; editing mid-workout must
   not move phase boundaries under a running clock.
 - Starting a session on a day with **no** exercises copies the intervals into today's

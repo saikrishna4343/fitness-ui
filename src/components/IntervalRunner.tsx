@@ -48,6 +48,7 @@ export function IntervalRunner({
   autoStart = false,
   resumeAt = 0,
   linkedWorkoutId = null,
+  onExerciseDone,
   onFinished,
   onExit,
 }: {
@@ -57,8 +58,10 @@ export function IntervalRunner({
   autoStart?: boolean
   /** Seconds into the session to pick up from, after a reload. */
   resumeAt?: number
-  /** The workout this session is standing in for, if it filled an empty day. */
+  /** The workout this session is driving, when it is linked to one. */
   linkedWorkoutId?: string | null
+  /** Fired when an exercise finishes its last set or round, once per exercise. */
+  onExerciseDone?: (phase: Phase) => void
   /** Fired once, when the last phase runs out. */
   onFinished?: () => void
   onExit: () => void
@@ -71,15 +74,31 @@ export function IntervalRunner({
   // Held in a ref for the same reason as the cues: the timer keeps the callback it was
   // given, and re-creating it on every render would restart the clock.
   const finishedRef = useRef(onFinished)
+  const doneRef = useRef(onExerciseDone)
   useEffect(() => {
     soundRef.current = sound
     settingsRef.current = settings
     finishedRef.current = onFinished
-  }, [sound, settings, onFinished])
+    doneRef.current = onExerciseDone
+  }, [sound, settings, onFinished, onExerciseDone])
 
   // Frozen for the length of the session: rebuilding it from an edit made mid-workout
   // would move every phase boundary under the running clock.
   const plan = useMemo(() => buildPlan(config), [config])
+  const planRef = useRef(plan)
+  useEffect(() => {
+    planRef.current = plan
+  }, [plan])
+
+  /**
+   * An exercise is finished the moment its last work phase ends, which is the moment
+   * the *next* phase begins -- there is no "phase ended" event, and waiting for the
+   * whole session would mean a tick arriving ten minutes after the effort.
+   */
+  const settled = useCallback((endedIndex: number) => {
+    const phase = planRef.current.phases[endedIndex]
+    if (phase?.completesExercise) doneRef.current?.(phase)
+  }, [])
 
   /**
    * The beep goes first and the words follow it.
@@ -99,15 +118,20 @@ export function IntervalRunner({
       [cue],
     ),
     onEnter: useCallback(
-      (phase: Phase) => cue(phase.kind === 'WORK' ? 'work' : 'rest', entryCue(phase)),
-      [cue],
+      (phase: Phase, index: number) => {
+        settled(index - 1)
+        cue(phase.kind === 'WORK' ? 'work' : 'rest', entryCue(phase))
+      },
+      [cue, settled],
     ),
     onFinish: useCallback(() => {
+      // Nothing follows the last phase, so its ending has to be caught here.
+      settled(planRef.current.phases.length - 1)
       cue('finish', 'Session complete. Well done.')
       // Nothing left to come back to.
       clearSession()
       finishedRef.current?.()
-    }, [cue]),
+    }, [cue, settled]),
   })
 
   const { phase, nextPhase, secondsLeft, status } = timer

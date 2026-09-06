@@ -1,18 +1,18 @@
-import { Copy, Plus, Trash2 } from 'lucide-react'
+import { Copy, Dumbbell, Plus, Trash2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { mmss } from '@/lib/intervalPlan'
-import { newExercise, newGroup, newId } from '@/lib/timerStorage'
-import type { IntervalGroup, TimerConfig } from '@/types/timer'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { groupSeconds, mmss } from '@/lib/intervalPlan'
+import { newExercise, newGroup, newId, WORKOUT_GROUP_ID } from '@/lib/timerStorage'
+import type { GroupStyle, IntervalGroup, TimerConfig } from '@/types/timer'
 
-/** Seconds a group takes: every round of work, the gaps inside it, and the gaps between. */
-function groupSeconds(group: IntervalGroup): number {
-  const work = group.exercises.reduce((total, exercise) => total + exercise.seconds, 0)
-  const gaps = Math.max(0, group.exercises.length - 1) * group.restSeconds
-  return group.rounds * (work + gaps) + Math.max(0, group.rounds - 1) * group.roundRestSeconds
-}
+const STYLES: { value: GroupStyle; label: string }[] = [
+  { value: 'CIRCUIT', label: 'Circuit' },
+  { value: 'SETS', label: 'Straight sets' },
+]
 
 /**
  * A number input for a duration or a count.
@@ -130,6 +130,12 @@ export function IntervalPlanEditor({
                 className="h-9 max-w-56 font-medium"
                 onChange={(event) => patchGroup(group.id, { name: event.target.value })}
               />
+              {group.id === WORKOUT_GROUP_ID && (
+                <Badge variant="secondary" className="gap-1 whitespace-nowrap">
+                  <Dumbbell className="size-3" />
+                  On today
+                </Badge>
+              )}
               <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                 {mmss(groupSeconds(group))}
               </span>
@@ -177,30 +183,64 @@ export function IntervalPlanEditor({
 
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
-              <NumberField
-                id={`rounds-${group.id}`}
-                label="Rounds (sets)"
-                min={1}
-                max={50}
-                step={1}
-                value={group.rounds}
-                onChange={(rounds) => patchGroup(group.id, { rounds })}
-              />
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor={`style-${group.id}`}
+                  className="text-xs font-normal text-muted-foreground"
+                >
+                  Shape
+                </Label>
+                <Select
+                  value={group.style}
+                  onValueChange={(value) => patchGroup(group.id, { style: value as GroupStyle })}
+                >
+                  <SelectTrigger id={`style-${group.id}`} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STYLES.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {group.style === 'CIRCUIT' && (
+                <NumberField
+                  id={`rounds-${group.id}`}
+                  label="Rounds"
+                  min={1}
+                  max={50}
+                  step={1}
+                  value={group.rounds}
+                  onChange={(rounds) => patchGroup(group.id, { rounds })}
+                />
+              )}
+
               <NumberField
                 id={`rest-${group.id}`}
-                label="Gap between exercises"
+                label={group.style === 'SETS' ? 'Rest between sets' : 'Gap between exercises'}
                 suffix="s"
                 value={group.restSeconds}
                 onChange={(restSeconds) => patchGroup(group.id, { restSeconds })}
               />
+
               <NumberField
                 id={`round-rest-${group.id}`}
-                label="Rest between rounds"
+                label={group.style === 'SETS' ? 'Rest between exercises' : 'Rest between rounds'}
                 suffix="s"
                 value={group.roundRestSeconds}
                 onChange={(roundRestSeconds) => patchGroup(group.id, { roundRestSeconds })}
               />
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              {group.style === 'CIRCUIT'
+                ? 'Every exercise once, then round again — one round count for all of them.'
+                : 'One exercise at a time, all of its sets, then the next. Sets are per exercise.'}
+            </p>
 
             <div className="space-y-2">
               {group.exercises.map((exercise, index) => (
@@ -221,6 +261,34 @@ export function IntervalPlanEditor({
                       })
                     }
                   />
+                  {group.style === 'SETS' && (
+                    <div className="relative w-20 shrink-0">
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        max={20}
+                        step={1}
+                        value={exercise.sets}
+                        aria-label={`Sets of exercise ${index + 1} in ${group.name}`}
+                        className="h-9 pl-6 tabular-nums"
+                        onChange={(event) => {
+                          const next = Number(event.target.value)
+                          if (event.target.value === '' || Number.isNaN(next)) return
+                          patchGroup(group.id, {
+                            exercises: group.exercises.map((other) =>
+                              other.id === exercise.id
+                                ? { ...other, sets: Math.min(20, Math.max(1, Math.round(next))) }
+                                : other,
+                            ),
+                          })
+                        }}
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 left-2 grid place-items-center text-xs text-muted-foreground">
+                        x
+                      </span>
+                    </div>
+                  )}
                   <div className="relative w-24 shrink-0">
                     <Input
                       type="number"

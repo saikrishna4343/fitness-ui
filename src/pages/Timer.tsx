@@ -1,164 +1,180 @@
-import { Download, History, Play, RotateCcw, Timer as TimerIcon, X } from 'lucide-react'
+import { Check, Dumbbell, History, Play, RotateCcw, Timer as TimerIcon, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   useAddSessionExercise,
   useCompleteWorkout,
+  useTickExercise,
   useUpdateWorkout,
   useWorkout,
 } from '@/api/hooks'
 import { PageHeader } from '@/components/AppShell'
 import { IntervalPlanEditor } from '@/components/IntervalPlanEditor'
 import { IntervalRunner } from '@/components/IntervalRunner'
-import { SoundSettingsCard } from '@/components/SoundSettingsCard'
+import { TodaysExercises } from '@/components/TodaysExercises'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { toIsoDate } from '@/lib/format'
 import { buildPlan, countWork, mmss, phaseIndexAt } from '@/lib/intervalPlan'
-import { primeAudio, type SoundSettings } from '@/lib/speech'
+import { defaultSound, primeAudio } from '@/lib/speech'
 import {
   clearSession,
   defaultConfig,
   loadConfig,
   loadSession,
-  loadSound,
-  newExercise,
-  newId,
   saveConfig,
-  saveSound,
+  type SavedSession,
 } from '@/lib/timerStorage'
-import type { SavedSession } from '@/lib/timerStorage'
-import type { TimerConfig } from '@/types/timer'
+import { repsFromSeconds, syncFromWorkout } from '@/lib/timerWorkout'
+import type { Phase, TimerConfig } from '@/types/timer'
 
 export default function Timer() {
   // Read once, on the first render: a later read would fight whatever is being typed.
-  const [config, setConfig] = useState<TimerConfig>(loadConfig)
-  const [sound, setSound] = useState<SoundSettings>(loadSound)
+  const [stored, setStored] = useState<TimerConfig>(loadConfig)
   const [running, setRunning] = useState(false)
-  // Read once, before anything can overwrite it: the runner starts saving over this
+  const [starting, setStarting] = useState(false)
+  // Read before anything can overwrite it: the runner starts saving over this
   // snapshot the moment a session begins.
   const [unfinished, setUnfinished] = useState(loadSession)
   const [resumeAt, setResumeAt] = useState(0)
-
-  useEffect(() => saveConfig(config), [config])
-  useEffect(() => saveSound(sound), [sound])
+  const [linkedWorkoutId, setLinkedWorkoutId] = useState<string | null>(null)
+  /**
+   * The config the running session was started with.
+   *
+   * Held apart from `config` because starting can write session ids into it, and the
+   * runner must be handed the version that has them -- otherwise the plan it freezes
+   * has nothing to tick against.
+   */
+  const [runConfig, setRunConfig] = useState<TimerConfig | null>(null)
 
   const today = toIsoDate(new Date())
   const { data: workout } = useWorkout(today)
   const addExercise = useAddSessionExercise(today)
   const updateWorkout = useUpdateWorkout(today)
+  const tickExercise = useTickExercise(today)
   const completeWorkout = useCompleteWorkout(today)
 
-  // Set only when this timer filled an empty day. Finishing completes that workout and
-  // nothing else: a session run alongside a real workout has not done that workout.
-  const [linkedWorkoutId, setLinkedWorkoutId] = useState<string | null>(null)
+  /**
+   * Today's workout, folded in.
+   *
+   * Derived rather than copied on a button press: the two screens are meant to be one
+   * workout, so an exercise added over there has to be here without anyone asking.
+   * Doing it in a memo rather than an effect means there is no second render and no
+   * state to fall out of step -- the config simply *is* the merge.
+   *
+   * `syncFromWorkout` keeps whatever you set here, matched by session id, so this
+   * running on every render costs nothing and changes nothing once it has settled.
+   */
+  const config = useMemo(
+    () => (stored.syncWithWorkout && workout ? syncFromWorkout(stored, workout) : stored),
+    [stored, workout],
+  )
+
+  // The merged config is what gets saved, so the session ids survive a reload.
+  useEffect(() => saveConfig(config), [config])
+
+  const setConfig = setStored
 
   const plan = useMemo(() => buildPlan(config), [config])
   const totals = countWork(config)
   const empty = plan.totalSeconds === 0
-  /** Nothing planned for today, so the timer is the workout. */
-  const adopts = !empty && workout != null && workout.exercises.length === 0
-  /** Distinct exercises, which is what today's workout gets — not one row per round. */
-  const adoptCount = config.groups.reduce(
-    (total, group) => (group.rounds > 0 ? total + group.exercises.length : total),
-    0,
-  )
-
-  function loadFromWorkout() {
-    if (!workout || workout.exercises.length === 0) return
-    setConfig({
-      ...config,
-      groups: [
-        ...config.groups,
-        {
-          id: newId(),
-          name: workout.focus || 'Today',
-          rounds: 3,
-          restSeconds: 20,
-          roundRestSeconds: 60,
-          // Only the names carry over. Today's workout is measured in sets and reps,
-          // which say nothing about how long an interval should run, so every one
-          // starts at the same default for you to trim.
-          exercises: workout.exercises.map((exercise) => newExercise(exercise.name)),
-        },
-      ],
-    })
-    toast.success(`Added ${workout.exercises.length} exercises from today's workout`)
-  }
 
   /**
-   * Copies the intervals into today's workout when the day is empty.
+   * Pushes anything the timer has that the workout does not, and returns the config
+   * with the new ids written in.
    *
-   * One session exercise per interval, not one per round: rounds are the sets, so a
-   * group run 3 times becomes an exercise with a target of 3 sets. Reps hold the work
-   * time, because that is what a rep is here.
-   *
-   * Deliberately not awaited by the caller — the countdown starts on the click, and
-   * waiting on a handful of round trips would leave the first exercise underway before
-   * the screen moved.
+   * Awaited before the clock starts, deliberately. The runner freezes its plan at
+   * mount, so an id arriving a second later would arrive too late to ever be ticked.
+   * In the common case -- a session loaded from the workout -- there is nothing to
+   * push and this returns immediately.
    */
-  async function fillTodaysWorkout(): Promise<string | null> {
-    if (!workout || !adopts) return null
-    const groups = config.groups.filter((group) => group.exercises.length > 0 && group.rounds > 0)
-    if (groups.length === 0) return null
+  async function pushToWorkout(): Promise<TimerConfig> {
+    if (!config.syncWithWorkout || !workout) return config
 
+    const missing = config.groups.flatMap((group) =>
+      group.exercises
+        .filter((exercise) => !exercise.sessionExerciseId)
+        .map((exercise) => ({
+          exercise,
+          // A circuit's rounds are its sets; in straight sets each exercise has its own.
+          sets: group.style === 'SETS' ? exercise.sets : group.rounds,
+        })),
+    )
+    if (missing.length === 0) return config
+
+    const ids = new Map<string, string>()
     try {
       if (workout.restDay) {
-        // A rest day holding exercises reads as a bug on the workout screen, and the
-        // focus moves with it for the same reason it does over there.
+        // A rest day holding exercises reads as a bug on the Workout screen, so the
+        // flag moves with them.
         await updateWorkout.mutateAsync({
           id: workout.id,
-          body: { restDay: false, focus: 'Interval training' },
+          body: { restDay: false, focus: workout.focus === 'Rest' ? 'Training' : workout.focus },
         })
       }
 
-      // Sequential: order_index is assigned from what is already there, so racing these
-      // would shuffle the exercises against the order you built them in.
-      for (const group of groups) {
-        for (const exercise of group.exercises) {
-          await addExercise.mutateAsync({
-            id: workout.id,
-            body: {
-              name: exercise.name.trim() || 'Exercise',
-              targetSets: group.rounds,
-              targetReps: `${exercise.seconds}s`,
-              notes: groups.length > 1 ? group.name : null,
-            },
-          })
-        }
+      // Sequential: add_session_exercise assigns order_index from what is already
+      // there, so racing these would shuffle them against the order you built.
+      for (const { exercise, sets } of missing) {
+        const row = (await addExercise.mutateAsync({
+          id: workout.id,
+          body: {
+            name: exercise.name.trim() || 'Exercise',
+            targetSets: sets,
+            // Seconds, not reps: it is what this exercise actually is here, and
+            // reading it back is what stops a round trip resetting your timings.
+            targetReps: repsFromSeconds(exercise.seconds),
+          },
+        })) as { id: string }
+        ids.set(exercise.id, row.id)
       }
-
-      toast.success(
-        `Added ${adoptCount} ${adoptCount === 1 ? 'exercise' : 'exercises'} to today's workout`,
-      )
-      return workout.id
+      toast.success(`Added ${missing.length} to today's workout`)
     } catch (error) {
-      // The workout not filling in is not a reason to stop the session that is already
-      // counting down.
-      toast.error(
-        error instanceof Error ? error.message : `Could not fill in today's workout`,
-      )
-      return null
+      // A failure here is not a reason to refuse to run the timer.
+      toast.error(error instanceof Error ? error.message : 'Could not update the workout')
     }
+
+    const next: TimerConfig = {
+      ...config,
+      groups: config.groups.map((group) => ({
+        ...group,
+        exercises: group.exercises.map((exercise) =>
+          ids.has(exercise.id)
+            ? { ...exercise, sessionExerciseId: ids.get(exercise.id) ?? null }
+            : exercise,
+        ),
+      })),
+    }
+    setConfig(next)
+    return next
   }
 
-  function begin(from = 0) {
-    // Inside the click, so iOS lets the first countdown play.
+  async function begin() {
+    // Inside the click, before any await, so iOS lets the first countdown play.
     primeAudio()
-    // Whatever was offered is about to be written over by the session starting now.
     setUnfinished(null)
-    setResumeAt(from)
+    setResumeAt(0)
+
+    setStarting(true)
+    const next = await pushToWorkout()
+    setStarting(false)
+
+    setRunConfig(next)
+    setLinkedWorkoutId(config.syncWithWorkout ? (workout?.id ?? null) : null)
     setRunning(true)
-    if (from === 0) void fillTodaysWorkout().then(setLinkedWorkoutId)
   }
 
-  /** The session ran to the end, so the workout it stood in for is done. */
-  function finished() {
-    if (!linkedWorkoutId) return
-    completeWorkout.mutate(linkedWorkoutId, {
-      onSuccess: () => toast.success(`Today's workout is marked complete`),
-      onError: (error) => toast.error(error.message),
-    })
+  function resume() {
+    if (!unfinished) return
+    primeAudio()
+    setConfig(unfinished.config)
+    setRunConfig(unfinished.config)
+    setLinkedWorkoutId(unfinished.linkedWorkoutId)
+    setUnfinished(null)
+    setResumeAt(unfinished.elapsed)
+    setRunning(true)
   }
 
   function discard() {
@@ -166,17 +182,36 @@ export default function Timer() {
     setUnfinished(null)
   }
 
-  function resume() {
-    if (!unfinished) return
-    // The session runs the config it started with, which is not necessarily the one in
-    // the editor now — so that becomes the editor's config too, rather than leaving the
-    // screen describing a workout other than the one counting down.
-    setConfig(unfinished.config)
-    setUnfinished(null)
-    // Restored before the session resumes, so finishing still completes the workout it
-    // adopted before the reload.
-    setLinkedWorkoutId(unfinished.linkedWorkoutId)
-    begin(unfinished.elapsed)
+  /** An exercise finished its last set. Tick it where it counts. */
+  function exerciseDone(phase: Phase) {
+    if (!phase.sessionExerciseId || !linkedWorkoutId) return
+    tickExercise.mutate({
+      id: phase.sessionExerciseId,
+      body: { completed: true, actualReps: repsFromSeconds(phase.seconds) },
+    })
+  }
+
+  /**
+   * The session ran to the end.
+   *
+   * The workout is marked complete only when the timer actually covered all of it. A
+   * ten-minute circuit alongside a planned eight-lift day has not done those lifts,
+   * and saying otherwise would be a lie that the Progress screen then repeats.
+   */
+  function finished() {
+    if (!linkedWorkoutId || !workout) return
+
+    const covered = new Set(
+      (runConfig ?? config).groups.flatMap((group) =>
+        group.exercises.map((exercise) => exercise.sessionExerciseId),
+      ),
+    )
+    if (!workout.exercises.every((exercise) => covered.has(exercise.id))) return
+
+    completeWorkout.mutate(linkedWorkoutId, {
+      onSuccess: () => toast.success("Today's workout is complete"),
+      onError: (error) => toast.error(error.message),
+    })
   }
 
   if (running) {
@@ -184,11 +219,12 @@ export default function Timer() {
       <>
         <PageHeader title="Interval timer" description="Eyes off the screen — the voice calls it." />
         <IntervalRunner
-          config={config}
-          sound={sound}
+          config={runConfig ?? config}
+          sound={defaultSound}
           autoStart
           resumeAt={resumeAt}
           linkedWorkoutId={linkedWorkoutId}
+          onExerciseDone={exerciseDone}
           onFinished={finished}
           onExit={() => setRunning(false)}
         />
@@ -216,19 +252,12 @@ export default function Timer() {
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {config.groups.length} {config.groups.length === 1 ? 'group' : 'groups'} ·{' '}
-                  {totals.rounds} {totals.rounds === 1 ? 'round' : 'rounds'} · {totals.exercises}{' '}
-                  intervals
+                  {totals.exercises} intervals
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {workout && workout.exercises.length > 0 && (
-                <Button variant="outline" className="gap-2" onClick={loadFromWorkout}>
-                  <Download className="size-4" />
-                  Use today&apos;s exercises
-                </Button>
-              )}
               <Button
                 variant="ghost"
                 className="gap-2 text-muted-foreground"
@@ -240,11 +269,11 @@ export default function Timer() {
               <Button
                 size="lg"
                 className="gap-2"
-                disabled={empty}
-                onClick={() => begin()}
+                disabled={empty || starting}
+                onClick={() => void begin()}
               >
                 <Play className="size-5" />
-                Start workout
+                {starting ? 'Getting ready…' : 'Start workout'}
               </Button>
             </div>
           </CardContent>
@@ -252,21 +281,41 @@ export default function Timer() {
 
         {unfinished && <ResumeCard session={unfinished} onResume={resume} onDiscard={discard} />}
 
-        {adopts && (
-          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-            Nothing is planned for today. Starting this adds {adoptCount}{' '}
-            {adoptCount === 1 ? 'exercise' : 'exercises'} to today&apos;s workout, and running
-            the session to the end marks it complete.
-          </p>
+        {config.syncWithWorkout && workout && (
+          <TodaysExercises workout={workout} config={config} onChange={setConfig} />
         )}
+
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                <Dumbbell className="size-4" />
+              </span>
+              <div>
+                <Label htmlFor="sync" className="cursor-pointer">
+                  Keep today&apos;s workout in step
+                </Label>
+                <p className="mt-0.5 max-w-prose text-xs text-muted-foreground">
+                  Today&apos;s exercises appear here on their own, and anything you build here is
+                  added to today when you start. Turn it off for a session you would rather not
+                  log.
+                </p>
+              </div>
+            </div>
+
+            <Switch
+              id="sync"
+              checked={config.syncWithWorkout}
+              onCheckedChange={(syncWithWorkout) => setConfig({ ...config, syncWithWorkout })}
+            />
+          </CardContent>
+        </Card>
 
         {empty && (
           <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
             Add at least one exercise to a group before starting.
           </p>
         )}
-
-        <SoundSettingsCard settings={sound} onChange={setSound} />
 
         <IntervalPlanEditor config={config} onChange={setConfig} />
       </div>
@@ -298,7 +347,7 @@ function ResumeCard({
             <p className="font-medium">Pick up where you left off</p>
             <p className="text-sm text-muted-foreground">
               {phase?.label ?? 'In progress'}
-              {phase?.round ? ` · round ${phase.round} of ${phase.rounds}` : ''} ·{' '}
+              {phase?.round ? ` · ${phase.round} of ${phase.rounds}` : ''} ·{' '}
               {mmss(session.elapsed)} in, {mmss(plan.totalSeconds - session.elapsed)} to go
             </p>
           </div>
@@ -309,7 +358,7 @@ function ResumeCard({
             Discard
           </Button>
           <Button className="gap-2" onClick={onResume}>
-            <Play className="size-4" />
+            <Check className="size-4" />
             Resume
           </Button>
         </div>

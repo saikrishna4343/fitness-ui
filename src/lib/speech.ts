@@ -21,12 +21,17 @@
 export type BeepLevel = 'off' | 'normal' | 'loud'
 
 export interface SoundSettings {
-  /** `voiceURI` of the chosen voice, or null for the best one this device offers. */
+  /** `voiceURI` of a specific voice, or null for PREFERRED_VOICE / the best available. */
   voiceURI: string | null
   rate: number
   beeps: BeepLevel
 }
 
+/**
+ * The only settings there are. There is no picker: the timer speaks in
+ * PREFERRED_VOICE wherever it exists and the best ranked voice everywhere else, and a
+ * screen of voice controls was three questions asked of someone who wanted a timer.
+ */
 export const defaultSound: SoundSettings = {
   voiceURI: null,
   // A shade under conversational. The cues are single words heard from across a room,
@@ -74,7 +79,7 @@ function score(voice: SpeechSynthesisVoice): number {
 }
 
 /** The named default first, then this device's language, then the rest of English. */
-export function rankedVoices(): SpeechSynthesisVoice[] {
+function rankedVoices(): SpeechSynthesisVoice[] {
   if (!speechSupported) return []
   const local = navigator.language?.slice(0, 2).toLowerCase() ?? 'en'
 
@@ -91,16 +96,6 @@ export function rankedVoices(): SpeechSynthesisVoice[] {
     if (score(a) !== score(b)) return score(b) - score(a)
     return a.name.localeCompare(b.name)
   })
-}
-
-/**
- * Voices arrive asynchronously on Chrome — the first `getVoices()` after a cold load
- * returns an empty array and the list is filled in later.
- */
-export function onVoicesChanged(listener: () => void): () => void {
-  if (!speechSupported) return () => {}
-  window.speechSynthesis.addEventListener('voiceschanged', listener)
-  return () => window.speechSynthesis.removeEventListener('voiceschanged', listener)
 }
 
 export function resolveVoice(voiceURI: string | null): SpeechSynthesisVoice | null {
