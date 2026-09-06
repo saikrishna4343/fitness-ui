@@ -248,6 +248,11 @@ the right way to get the same behaviour.
   the work time becomes the reps — and running the session to the end marks that workout
   complete. A day that already has exercises is left alone: a ten-minute interval session
   is not proof you did the eight lifts you had planned.
+- **The coach can write to three places, and knows which is which.** "Log that" adds the
+  foods to a day; "put these in tomorrow's workout" adds to that one date; "every Monday"
+  edits the weekly plan instead. It asks when the difference is genuinely unclear. Today's
+  date comes from your browser, not the server, so an evening meal is not logged to
+  tomorrow.
 - **The coach quotes numbers it did not invent.** Calorie targets, averages and the last
   training day are computed in Postgres and handed to the model to explain; the only thing
   it estimates is the macros of a food described in words, and only after searching your

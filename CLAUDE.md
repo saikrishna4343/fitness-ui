@@ -185,6 +185,16 @@ nothing about it — check it with `deno check supabase/functions/coach/index.ts
   model can re-fetch fresher for one tool call. The words stay because "add them to today"
   is meaningless without the message listing them. The table still stores everything; only
   the replay is trimmed.
+- **Three write tools, and the difference between them is the point**: `log_food` (one or
+  more foods on a date), `add_workout_exercises` (one date's session — `ensure_session`
+  materialises a future day), `add_plan_exercises` (a weekday of the weekly template,
+  which does *not* alter a workout already materialised). The prompt tells the model to
+  ask when "add squats on Monday" is genuinely ambiguous.
+- **The date comes from the browser**, sent on every request and carried as `ctx.today`.
+  The function runs in UTC, which is already tomorrow from ~7pm Central — logging dinner
+  to the wrong day would be a quiet, week-ruining bug. It is injected as a **second
+  system block after the cache breakpoint**, so a string that changes daily never
+  invalidates a prompt that does not.
 - **`TOOLS` order is load-bearing.** Tools render before the system prompt in the cached
   prefix; reordering them costs a full cache miss on every request. Same for any edit to
   `prompt.ts` — one uncached request, then free.

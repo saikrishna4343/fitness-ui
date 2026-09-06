@@ -45,6 +45,29 @@ const json = (body: unknown, status = 200) =>
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
 
+/**
+ * The one thing the model cannot work out for itself.
+ *
+ * Without this, "add these tomorrow" is unanswerable: an LLM has no clock, and asking
+ * the user what day it is would be absurd. Sent as its own system block, after the
+ * cache breakpoint, so a date that changes daily does not invalidate a prompt that does not.
+ */
+function todayLine(date: string): string {
+  // Parsed as UTC midnight so the weekday is read off the date as given, with no
+  // second timezone shift applied to a date that has already been localised once.
+  const at = new Date(`${date}T00:00:00Z`)
+  const weekday = at.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' })
+  // ISO day of week, which is what add_plan_exercises takes: 1 Monday ... 7 Sunday.
+  const iso = ((at.getUTCDay() + 6) % 7) + 1
+  return `Today is ${weekday} ${date}. ISO day of week ${iso} (1 Monday ... 7 Sunday).`
+}
+
+/** yyyy-MM-dd, and a real one -- this reaches the database as a date. */
+const isDate = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+  !Number.isNaN(new Date(`${value}T00:00:00Z`).getTime())
+
 /** Text blocks only, as the model's own message shape. */
 function textOnly(content: unknown): { type: 'text'; text: string }[] {
   if (typeof content === 'string') {
@@ -124,12 +147,16 @@ Deno.serve(async (req) => {
   // forged one anyway, but failing here gives a usable message and costs nothing.
   const { data: userData, error: userError } = await db.auth.getUser()
   if (userError || !userData?.user) return json({ error: 'Your session has expired' }, 401)
-  const ctx: CoachContext = { userId: userData.user.id }
+  const ctx: CoachContext = { userId: userData.user.id, today }
 
   let message: string
+  // The browser's own calendar date. The function runs in UTC, which is a different
+  // day from about 7pm Central onwards -- close enough to dinner to matter.
+  let today = new Date().toISOString().slice(0, 10)
   try {
     const body = await req.json()
     message = String(body?.message ?? '').trim()
+    if (isDate(body?.today)) today = body.today
   } catch {
     return json({ error: 'Expected a JSON body' }, 400)
   }
@@ -192,6 +219,10 @@ Deno.serve(async (req) => {
             // requests or the cache silently misses.
             system: [
               { type: 'text', text: COACH_PROMPT, cache_control: { type: 'ephemeral', ttl: '1h' } },
+              // After the breakpoint on purpose: the date changes daily, and putting it
+              // inside the cached block would throw the cache away every midnight -- and
+              // on every request, since the string carries the weekday too.
+              { type: 'text', text: todayLine(today) },
             ],
             tools: TOOL_DEFINITIONS,
             // deno-lint-ignore no-explicit-any

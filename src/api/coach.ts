@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useRef, useState } from 'react'
 import { ApiError } from '@/lib/api'
+import { toIsoDate } from '@/lib/format'
 import { supabase, usingLocalAuth } from '@/lib/supabase'
 import type { CoachEvent, CoachMessage, CoachRole } from '@/types/coach'
 
@@ -137,7 +138,10 @@ export function useCoachChat(): CoachChat {
             apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ message }),
+          // The date is the browser's, not the server's: the function runs in UTC and
+          // would otherwise log an evening meal to tomorrow. Same rule as the rest of
+          // the app -- dates are yours, not the server's.
+          body: JSON.stringify({ message, today: toIsoDate(new Date()) }),
         })
 
         // Everything that fails before the stream starts answers with JSON: not
@@ -197,6 +201,9 @@ export function useCoachChat(): CoachChat {
           void client.invalidateQueries({ queryKey: ['summary'] })
           void client.invalidateQueries({ queryKey: ['summary-range'] })
           void client.invalidateQueries({ queryKey: ['food-entries'] })
+          // The coach can now edit the weekly plan too, and a plan edit changes what a
+          // future day materialises as.
+          void client.invalidateQueries({ queryKey: ['plan'] })
         }
         setStreaming('')
         setActivity(null)
