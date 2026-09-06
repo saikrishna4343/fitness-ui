@@ -119,8 +119,9 @@ outlives deploys and a NaN would hang the clock on one phase forever.
   call it. "Best available" is `PREFERRED_VOICE`, named outright — Google UK English
   Male, which Chrome ships and speaks over the network. Everything after it is ranked by
   name (`natural`/`neural`/`premium` up, `espeak`/`compact` down) because the API exposes
-  no quality field; the user's pick and the beep level live
-  under their own localStorage key so a Reset of the intervals does not clear them.
+  no quality field; there is no voice picker and no stored
+  preference -- `defaultSound` is passed straight to the runner, and `voiceURI: null`
+  resolves to `PREFERRED_VOICE` (Google UK English Male) or the best ranked fallback.
 - **The timer and today's workout are linked through `sessionExerciseId`** on each
   interval exercise (`src/lib/timerWorkout.ts`). It makes the sync idempotent, lets your
   timings survive a refresh from the workout, and is what the runner ticks against.

@@ -11,22 +11,19 @@ import {
 import { PageHeader } from '@/components/AppShell'
 import { IntervalPlanEditor } from '@/components/IntervalPlanEditor'
 import { IntervalRunner } from '@/components/IntervalRunner'
-import { SoundSettingsCard } from '@/components/SoundSettingsCard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { toIsoDate } from '@/lib/format'
 import { buildPlan, countWork, mmss, phaseIndexAt } from '@/lib/intervalPlan'
-import { primeAudio, type SoundSettings } from '@/lib/speech'
+import { defaultSound, primeAudio } from '@/lib/speech'
 import {
   clearSession,
   defaultConfig,
   loadConfig,
   loadSession,
-  loadSound,
   saveConfig,
-  saveSound,
   type SavedSession,
 } from '@/lib/timerStorage'
 import {
@@ -40,7 +37,6 @@ import type { Phase, TimerConfig } from '@/types/timer'
 export default function Timer() {
   // Read once, on the first render: a later read would fight whatever is being typed.
   const [stored, setStored] = useState<TimerConfig>(loadConfig)
-  const [sound, setSound] = useState<SoundSettings>(loadSound)
   const [running, setRunning] = useState(false)
   const [starting, setStarting] = useState(false)
   // Read before anything can overwrite it: the runner starts saving over this
@@ -56,8 +52,6 @@ export default function Timer() {
    * has nothing to tick against.
    */
   const [runConfig, setRunConfig] = useState<TimerConfig | null>(null)
-
-  useEffect(() => saveSound(sound), [sound])
 
   const today = toIsoDate(new Date())
   const { data: workout } = useWorkout(today)
@@ -221,7 +215,7 @@ export default function Timer() {
         <PageHeader title="Interval timer" description="Eyes off the screen — the voice calls it." />
         <IntervalRunner
           config={runConfig ?? config}
-          sound={sound}
+          sound={defaultSound}
           autoStart
           resumeAt={resumeAt}
           linkedWorkoutId={linkedWorkoutId}
@@ -313,8 +307,6 @@ export default function Timer() {
             Add at least one exercise to a group before starting.
           </p>
         )}
-
-        <SoundSettingsCard settings={sound} onChange={setSound} />
 
         <IntervalPlanEditor config={config} onChange={setConfig} />
       </div>

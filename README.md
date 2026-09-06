@@ -237,8 +237,9 @@ the right way to get the same behaviour.
   into an exercise and "rest easy" coming out of one. A Web Audio beep lands on each
   boundary ahead of the words — speech volume is capped at 1 by the platform, so the tone
   is the part that carries across a room. The voice is Google UK English Male wherever
-  the browser has it. Pick a different one, its speed and the beep level on the setup
-  screen; the list is whatever that device offers.
+  the browser has it -- Chrome, mostly -- and the best-sounding voice the device offers
+  everywhere else. There is nothing to configure; the only control is a mute toggle
+  while a session is running.
 - **On an empty day, the timer is the workout.** Start a session with nothing planned for
   today and the intervals are copied into today's workout — rounds become the target sets,
   the work time becomes the reps — and running the session to the end marks that workout
