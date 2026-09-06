@@ -39,6 +39,7 @@ export function defaultConfig(): TimerConfig {
     groupRestSeconds: 90,
     syncWithWorkout: true,
     excludedExerciseIds: [],
+    groupNumbers: {},
     groups: [newGroup(0)],
   }
 }
@@ -109,6 +110,16 @@ function parse(raw: unknown): TimerConfig | null {
     excludedExerciseIds: Array.isArray(source.excludedExerciseIds)
       ? source.excludedExerciseIds.filter((id): id is string => typeof id === 'string')
       : [],
+    groupNumbers:
+      typeof source.groupNumbers === 'object' && source.groupNumbers !== null
+        ? Object.fromEntries(
+            Object.entries(source.groupNumbers as Record<string, unknown>).flatMap(([id, value]) =>
+              typeof value === 'number' && Number.isFinite(value)
+                ? [[id, Math.min(20, Math.max(0, Math.round(value)))]]
+                : [],
+            ),
+          )
+        : {},
     groups,
   }
 }

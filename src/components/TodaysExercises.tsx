@@ -1,26 +1,31 @@
-import { CheckCircle2, Dumbbell } from 'lucide-react'
+import { CheckCircle2, Dumbbell, Split } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { assignToGroup, groupOf } from '@/lib/timerWorkout'
+import { Input } from '@/components/ui/input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  breakIntoGroups,
+  DEFAULT_REST_SECONDS,
+  groupNumberOf,
+  groupOf,
+  groupingPending,
+  setGroupNumber,
+} from '@/lib/timerWorkout'
 import { cn } from '@/lib/utils'
 import type { Workout } from '@/types/api'
 import type { TimerConfig } from '@/types/timer'
 
-/** The value the Select uses for "leave this one out". */
-const OUT = 'out'
-
 /**
- * Today's workout, exercise by exercise, with the group each one runs in.
+ * Today's workout, exercise by exercise, with the group number each one runs in.
  *
- * The timer used to drop the whole day into a single group, which is only right for a
- * workout that happens to be one circuit. A real session is a couple of blocks — the
- * heavy work, then the accessories — so the assignment is the thing to put on screen,
- * and the groups below are what it assigns into.
+ * A number rather than a picker: typing 1, 1, 2, 2 down a column is faster than four
+ * dropdowns, and the column then says the shape of the session at a glance. Same
+ * number, same group — that is the whole rule.
  *
- * Exercises already ticked on the workout are shown as done rather than hidden: the
- * list should match what the Workout screen says, and a finished exercise is still
- * part of today.
+ * Nothing regroups as you type. The numbers are an intention until you press the
+ * button, which means you can renumber the whole list without the session rearranging
+ * itself under your hands halfway through.
  */
 export function TodaysExercises({
   workout,
@@ -43,77 +48,116 @@ export function TodaysExercises({
     )
   }
 
-  const inSession = workout.exercises.filter((exercise) => groupOf(config, exercise.id)).length
+  const pending = groupingPending(config, workout)
+  const numbers = workout.exercises.map((exercise) => groupNumberOf(config, exercise.id))
+  const distinct = new Set(numbers.filter((n) => n > 0)).size
 
   return (
     <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-3">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0 pb-3">
         <div>
           <h2 className="text-base font-semibold">Today&apos;s workout</h2>
           <p className="text-sm text-muted-foreground">
-            {workout.focus} — put each exercise in a group, or leave it out.
+            {workout.focus} — number the exercises, same number for the ones that run together.
+            0 leaves one out.
           </p>
         </div>
-        <Badge variant="secondary">
-          {inSession} of {workout.exercises.length} in this session
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary">
+            {distinct} {distinct === 1 ? 'group' : 'groups'}
+          </Badge>
+          <Button
+            size="sm"
+            className="gap-2"
+            disabled={!pending}
+            onClick={() => onChange(breakIntoGroups(config, workout))}
+          >
+            <Split className="size-4" />
+            Break into groups
+          </Button>
+        </div>
       </CardHeader>
 
-      <CardContent className="space-y-2">
-        {workout.exercises.map((exercise) => {
-          const group = groupOf(config, exercise.id)
-          const interval = group?.exercises.find((e) => e.sessionExerciseId === exercise.id)
+      <CardContent className="space-y-3">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-20">Group</TableHead>
+                <TableHead>Exercise</TableHead>
+                <TableHead className="w-32">Planned</TableHead>
+                <TableHead className="w-32">Runs as</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {workout.exercises.map((exercise) => {
+                const number = groupNumberOf(config, exercise.id)
+                const interval = groupOf(config, exercise.id)?.exercises.find(
+                  (e) => e.sessionExerciseId === exercise.id,
+                )
 
-          return (
-            <div
-              key={exercise.id}
-              className={cn(
-                'flex flex-wrap items-center gap-3 rounded-md border p-2.5',
-                !group && 'border-dashed opacity-70',
-              )}
-            >
-              {exercise.completed ? (
-                <CheckCircle2 className="size-4 shrink-0 text-primary" aria-label="Completed" />
-              ) : (
-                <span className="size-4 shrink-0 rounded-full border" aria-hidden />
-              )}
+                return (
+                  <TableRow key={exercise.id} className={cn(number === 0 && 'opacity-55')}>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={20}
+                        step={1}
+                        value={number}
+                        aria-label={`Group number for ${exercise.name}`}
+                        className="h-9 w-16 tabular-nums"
+                        onChange={(event) => {
+                          const next = Number(event.target.value)
+                          if (event.target.value === '' || Number.isNaN(next)) return
+                          onChange(
+                            setGroupNumber(config, exercise.id, Math.min(20, Math.max(0, next))),
+                          )
+                        }}
+                      />
+                    </TableCell>
 
-              <div className="min-w-40 flex-1">
-                <p className={cn('truncate text-sm font-medium', exercise.completed && 'line-through')}>
-                  {exercise.name}
-                </p>
-                <p className="text-xs tabular-nums text-muted-foreground">
-                  {interval
-                    ? `${interval.sets} × ${interval.seconds}s`
-                    : `${exercise.targetSets} × ${exercise.targetReps}`}
-                </p>
-              </div>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {exercise.completed && (
+                          <CheckCircle2 className="size-4 shrink-0 text-primary" aria-label="Done" />
+                        )}
+                        <span
+                          className={cn(
+                            'font-medium',
+                            exercise.completed && 'text-muted-foreground line-through',
+                          )}
+                        >
+                          {exercise.name}
+                        </span>
+                      </div>
+                    </TableCell>
 
-              <Select
-                value={group?.id ?? OUT}
-                onValueChange={(value) =>
-                  onChange(assignToGroup(config, exercise.id, value === OUT ? null : value, exercise))
-                }
-              >
-                <SelectTrigger className="w-44" aria-label={`Group for ${exercise.name}`}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {config.groups.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.name}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value={OUT}>Not in this session</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )
-        })}
+                    <TableCell className="tabular-nums text-muted-foreground">
+                      {exercise.targetSets} × {exercise.targetReps}
+                    </TableCell>
 
-        <p className="pt-1 text-xs text-muted-foreground">
-          Set the seconds for each one in its group below. Finishing an exercise&apos;s last set
-          ticks it off on the Workout screen.
+                    <TableCell className="tabular-nums">
+                      {number === 0 ? (
+                        <span className="text-muted-foreground">Left out</span>
+                      ) : interval ? (
+                        `${interval.sets} × ${interval.seconds}s`
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          {pending
+            ? `Break into groups to apply the numbers. New groups start at ${DEFAULT_REST_SECONDS}s rest between sets, exercises and groups — adjust each one below.`
+            : "Set the seconds for each exercise in its group below. Finishing an exercise's last set ticks it off on the Workout screen."}
         </p>
       </CardContent>
     </Card>

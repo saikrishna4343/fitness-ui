@@ -10,14 +10,14 @@ import type { IntervalExercise, IntervalGroup, TimerConfig } from '@/types/timer
  * and finishing their sets ticks them there.
  *
  * The link is `sessionExerciseId` on each interval exercise. It is what lets the sync be
- * idempotent, what lets your own timings and grouping survive the workout changing under
- * them, and what the runner writes ticks against.
- *
- * The sync only ever *adds* and *removes*. Which group an exercise sits in is yours: an
- * exercise already somewhere in the config is left exactly where you put it.
+ * idempotent, what lets your timings survive the workout changing under them, and what
+ * the runner writes ticks against.
  */
 
 const DEFAULT_SECONDS = 40
+
+/** The rest a freshly-formed group gets, both between exercises and between groups. */
+export const DEFAULT_REST_SECONDS = 45
 
 /**
  * How long to work an exercise for, from what the workout says about it.
@@ -39,12 +39,13 @@ export function repsFromSeconds(seconds: number): string {
   return `${Math.max(1, Math.round(seconds))}s`
 }
 
-function toInterval(exercise: WorkoutExercise): IntervalExercise {
+function toInterval(exercise: WorkoutExercise, previous?: IntervalExercise): IntervalExercise {
   return {
-    id: newId(),
+    id: previous?.id ?? newId(),
     name: exercise.name,
-    seconds: secondsFromReps(exercise.targetReps),
-    sets: Math.max(1, exercise.targetSets),
+    // Your timing wins over the default: you set 30 seconds for burpees on purpose.
+    seconds: previous?.seconds ?? secondsFromReps(exercise.targetReps),
+    sets: previous?.sets ?? Math.max(1, exercise.targetSets),
     sessionExerciseId: exercise.id,
   }
 }
@@ -56,20 +57,125 @@ export function groupOf(config: TimerConfig, sessionExerciseId: string): Interva
   )
 }
 
+function intervalOf(
+  config: TimerConfig,
+  sessionExerciseId: string,
+): IntervalExercise | undefined {
+  return groupOf(config, sessionExerciseId)?.exercises.find(
+    (exercise) => exercise.sessionExerciseId === sessionExerciseId,
+  )
+}
+
 export function findWorkoutGroup(config: TimerConfig): IntervalGroup | undefined {
   return config.groups.find((group) => group.id === WORKOUT_GROUP_ID)
 }
 
-/** The group new exercises land in: the one the app made, or the first there is. */
-function landingGroup(config: TimerConfig): IntervalGroup | undefined {
-  return findWorkoutGroup(config) ?? config.groups[0]
+/** True for a group the user built themselves, rather than one formed from the workout. */
+function isOwnGroup(group: IntervalGroup): boolean {
+  return group.exercises.length > 0 && group.exercises.every((e) => !e.sessionExerciseId)
+}
+
+/**
+ * The number typed against an exercise, or the number its group implies.
+ *
+ * Everything defaults to 1, so a workout that is one straight session needs nothing
+ * typed at all — the numbers only matter when you want to split it.
+ */
+export function groupNumberOf(config: TimerConfig, sessionExerciseId: string): number {
+  const stored = config.groupNumbers[sessionExerciseId]
+  if (typeof stored === 'number') return stored
+  return config.excludedExerciseIds.includes(sessionExerciseId) ? 0 : 1
+}
+
+export function setGroupNumber(
+  config: TimerConfig,
+  sessionExerciseId: string,
+  value: number,
+): TimerConfig {
+  return {
+    ...config,
+    groupNumbers: { ...config.groupNumbers, [sessionExerciseId]: Math.max(0, Math.round(value)) },
+  }
+}
+
+/**
+ * Whether the numbers as typed differ from the groups as they stand.
+ *
+ * What the "Break into groups" button is enabled by: no point offering to rebuild
+ * something that already matches.
+ */
+export function groupingPending(config: TimerConfig, workout: Workout | undefined): boolean {
+  if (!workout) return false
+  return workout.exercises.some((exercise) => {
+    const number = groupNumberOf(config, exercise.id)
+    const group = groupOf(config, exercise.id)
+    if (number === 0) return group !== undefined
+    if (!group) return true
+    return group.name !== `Group ${number}`
+  })
+}
+
+/**
+ * Forms the groups from the numbers.
+ *
+ * Same number, same group — which is the whole rule, and why the input is a number
+ * rather than a picker: typing 1, 1, 2, 2 is faster than four dropdowns, and says the
+ * shape of the session at a glance.
+ *
+ * Groups arrive as straight sets, because a workout is written that way: 5x5 squats and
+ * 3x15 calf raises cannot share one round count. Rests start at 45 seconds and are
+ * yours to change per group afterwards.
+ */
+export function breakIntoGroups(config: TimerConfig, workout: Workout): TimerConfig {
+  const numbered = new Map<number, WorkoutExercise[]>()
+  const excluded: string[] = []
+
+  for (const exercise of workout.exercises) {
+    const number = groupNumberOf(config, exercise.id)
+    if (number <= 0) {
+      excluded.push(exercise.id)
+      continue
+    }
+    const bucket = numbered.get(number) ?? []
+    bucket.push(exercise)
+    numbered.set(number, bucket)
+  }
+
+  const formed: IntervalGroup[] = [...numbered.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([number, exercises], index) => {
+      // The group in this slot before the rebuild, so its rests survive a renumber.
+      const previous = config.groups.find((group) => group.name === `Group ${number}`)
+      return {
+        // The first formed group keeps the well-known id, so anything added on the
+        // Workout screen later still has somewhere obvious to land.
+        id: index === 0 ? WORKOUT_GROUP_ID : (previous?.id ?? newId()),
+        name: `Group ${number}`,
+        style: 'SETS' as const,
+        rounds: 1,
+        restSeconds: previous?.restSeconds ?? DEFAULT_REST_SECONDS,
+        roundRestSeconds: previous?.roundRestSeconds ?? DEFAULT_REST_SECONDS,
+        exercises: exercises.map((exercise) => toInterval(exercise, intervalOf(config, exercise.id))),
+      }
+    })
+
+  return {
+    ...config,
+    // Groups you built yourself are none of this rebuild's business, so they survive it.
+    groups: [...formed, ...config.groups.filter(isOwnGroup)],
+    excludedExerciseIds: excluded,
+    groupRestSeconds:
+      formed.length > 1 && config.groupRestSeconds === 90
+        ? DEFAULT_REST_SECONDS
+        : config.groupRestSeconds,
+  }
 }
 
 /**
  * Folds today's workout into the config.
  *
- * Adds what is new, drops what is gone, and touches nothing else — an exercise you moved
- * into another group stays there, and one you set to 30 seconds stays at 30. Idempotent,
+ * Adds what is new, drops what is gone, and touches nothing else — an exercise you put
+ * in group 2 stays in group 2, and one you set to 30 seconds stays at 30. Idempotent,
  * which is what makes it safe to run on every render.
  */
 export function syncFromWorkout(config: TimerConfig, workout: Workout): TimerConfig {
@@ -96,69 +202,26 @@ export function syncFromWorkout(config: TimerConfig, workout: Workout): TimerCon
 
   if (missing.length === 0) return { ...config, groups }
 
-  const landing = landingGroup({ ...config, groups })
+  const landing = findWorkoutGroup({ ...config, groups }) ?? groups[0]
   if (landing) {
     groups = groups.map((group) =>
       group.id === landing.id
-        ? { ...group, exercises: [...group.exercises, ...missing.map(toInterval)] }
+        ? { ...group, exercises: [...group.exercises, ...missing.map((e) => toInterval(e))] }
         : group,
     )
   } else {
-    // Nothing to land in: the config is empty, so today's workout becomes the session.
-    // Straight sets, because that is how a workout is written -- 5x5 then 3x15 cannot be
-    // said with one round count for the group.
     groups = [
       {
         id: WORKOUT_GROUP_ID,
-        name: workout.focus?.trim() || "Today's workout",
+        name: 'Group 1',
         style: 'SETS',
         rounds: 1,
-        restSeconds: 45,
-        roundRestSeconds: 90,
-        exercises: missing.map(toInterval),
+        restSeconds: DEFAULT_REST_SECONDS,
+        roundRestSeconds: DEFAULT_REST_SECONDS,
+        exercises: missing.map((e) => toInterval(e)),
       },
     ]
   }
 
   return { ...config, groups }
-}
-
-/**
- * Moves one of today's exercises into a group, or out of the session entirely.
- *
- * `null` excludes it: the exercise stays on the workout, and stays untouched by the
- * timer, which is what you want for the thing you are doing outside the app. The
- * exclusion is remembered, or the next sync would put it straight back.
- */
-export function assignToGroup(
-  config: TimerConfig,
-  sessionExerciseId: string,
-  groupId: string | null,
-  fromWorkout: WorkoutExercise,
-): TimerConfig {
-  const current = groupOf(config, sessionExerciseId)
-  const moving =
-    current?.exercises.find((exercise) => exercise.sessionExerciseId === sessionExerciseId) ??
-    toInterval(fromWorkout)
-
-  const without = config.groups.map((group) => ({
-    ...group,
-    exercises: group.exercises.filter(
-      (exercise) => exercise.sessionExerciseId !== sessionExerciseId,
-    ),
-  }))
-
-  const excluded = config.excludedExerciseIds.filter((id) => id !== sessionExerciseId)
-
-  if (groupId === null) {
-    return { ...config, groups: without, excludedExerciseIds: [...excluded, sessionExerciseId] }
-  }
-
-  return {
-    ...config,
-    excludedExerciseIds: excluded,
-    groups: without.map((group) =>
-      group.id === groupId ? { ...group, exercises: [...group.exercises, moving] } : group,
-    ),
-  }
 }

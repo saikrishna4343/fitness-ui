@@ -64,6 +64,14 @@ export interface TimerConfig {
    */
   excludedExerciseIds: string[]
   /**
+   * The group number typed against each of today's exercises, by session exercise id.
+   *
+   * Held apart from the groups themselves because it is an intention, not a fact: you
+   * renumber the whole list and then press the button, and nothing rearranges under
+   * your hands in between. 0 means leave this one out.
+   */
+  groupNumbers: Record<string, number>
+  /**
    * Whether finishing work here writes back to today's workout.
    *
    * On by default, and worth being able to turn off: a quick five-minute circuit

@@ -125,6 +125,11 @@ outlives deploys and a NaN would hang the clock on one phase forever.
 - **The timer and today's workout are linked through `sessionExerciseId`** on each
   interval exercise (`src/lib/timerWorkout.ts`). It makes the sync idempotent, lets your
   timings survive a refresh from the workout, and is what the runner ticks against.
+  Grouping is by **typed number** (`config.groupNumbers`, keyed by session exercise id):
+  same number, same group, 0 to leave one out, applied by `breakIntoGroups()` when the
+  button is pressed. The numbers are an intention held apart from the groups, so a whole
+  list can be renumbered without the session rearranging mid-edit. A rebuild preserves
+  per-exercise seconds, each group's rests, and any group the user built themselves.
   `syncFromWorkout()` only ever **adds and removes** — which group an exercise sits in is
   the user's, so an exercise already in the config is never relocated, and one taken out
   goes on `excludedExerciseIds` or the next merge would put it straight back. It is
