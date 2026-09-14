@@ -29,8 +29,16 @@ import type { TurnMessage, TurnRequest } from './providers.ts'
  * which matters when the reason to switch is a free tier running out mid-session.
  * Anything starting "claude" goes to Anthropic, "gpt" or "o<digit>" to OpenAI, and
  * everything else to Gemini.
+ *
+ * Normalised because a secret pasted as "GPT-5-mini" or with its quotes still on would
+ * otherwise fall through to Gemini and fail there, naming the wrong provider.
  */
-const MODEL = Deno.env.get('COACH_MODEL')?.trim() || 'gpt-5-mini'
+const MODEL =
+  Deno.env.get('COACH_MODEL')?.trim().replace(/^["']|["']$/g, '').trim().toLowerCase() ||
+  'gpt-5-mini'
+
+const PROVIDER = MODEL.startsWith('claude') ? 'anthropic' : /^(gpt|o\d)/.test(MODEL) ? 'openai' : 'gemini'
+console.log(`[coach] model=${MODEL} provider=${PROVIDER}`)
 
 /** Messages replayed to the model. Older ones stay in the table for the UI. */
 const REPLAY_MESSAGES = 12
@@ -199,11 +207,12 @@ Deno.serve(async (req) => {
           onWrote: (name, result) => send({ type: 'wrote', name, result }),
         }
 
-        const result = MODEL.startsWith('claude')
-          ? await runAnthropicTurn(request)
-          : /^(gpt|o\d)/.test(MODEL)
-            ? await runOpenAiTurn(request)
-            : await runGeminiTurn(request)
+        const result =
+          PROVIDER === 'anthropic'
+            ? await runAnthropicTurn(request)
+            : PROVIDER === 'openai'
+              ? await runOpenAiTurn(request)
+              : await runGeminiTurn(request)
 
         if (result.refused) {
           send({ type: 'error', message: 'The model declined to answer that one.' })
@@ -230,11 +239,11 @@ Deno.serve(async (req) => {
 
         send({ type: 'done' })
       } catch (error) {
-        console.error('[coach]', MODEL, error)
-        send({
-          type: 'error',
-          message: error instanceof Error ? error.message : 'The coach could not answer',
-        })
+        console.error('[coach]', MODEL, PROVIDER, error)
+        // Prefixed with the provider, so "which code is deployed, which secret is read"
+        // is answered by the error itself rather than by a trip to the logs.
+        const detail = error instanceof Error ? error.message : 'The coach could not answer'
+        send({ type: 'error', message: `[${PROVIDER} · ${MODEL}] ${detail}` })
       } finally {
         controller.close()
       }
