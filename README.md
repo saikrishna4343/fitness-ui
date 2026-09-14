@@ -118,16 +118,29 @@ The `/coach` screen needs one server-side piece, because an Anthropic API key ca
 live in the browser bundle the way the anon key does. It is a Supabase Edge Function.
 
 1. Run `supabase/13_coach.sql` in the SQL editor. It brings its own grants and policies.
-2. Get an API key from **console.anthropic.com -> Settings -> API keys**, and buy credits
-   under Plans & Billing. API access is prepaid and separate from a Claude.ai
-   subscription -- a Pro plan does not include it.
+2. Get a model API key and set which model answers:
+
+   | Secret | Value |
+   |---|---|
+   | `COACH_MODEL` | `gpt-5-mini` (default), or any `gemini-*` or `claude-*` id |
+   | `OPENAI_API_KEY` | from **platform.openai.com -> API keys**, prepaid, and separate from a ChatGPT subscription. |
+   | `GEMINI_API_KEY` | from **aistudio.google.com -> Get API key**. Gemini has a free tier. |
+   | `ANTHROPIC_API_KEY` | from **console.anthropic.com -> Settings -> API keys**, prepaid, and separate from a Claude.ai subscription -- a Pro plan does not include it. |
+
+   Set only the key for the provider you are using. `COACH_MODEL` picks it: anything
+   starting `claude` goes to Anthropic, `gpt` or `o<digit>` to OpenAI, everything else to
+   Gemini. Switching provider is
+   a secret change and a restart, not a code change.
+
+   Free tiers usually reserve the right to train on what you send. This app sends your
+   food log and your training history, so that is worth reading before choosing.
 3. Deploy. The CLI is a dev dependency, so `npx` runs it -- do not install it globally
    with npm, which it refuses:
 
 ```sh
 npx supabase login                                # opens a browser, once per machine
 npx supabase link --project-ref <your-project-ref>   # the subdomain of your project URL
-npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+npx supabase secrets set OPENAI_API_KEY=sk-...
 npx supabase functions deploy coach
 ```
 
@@ -140,8 +153,8 @@ npm run coach:bundle    # writes supabase/functions/coach/_bundle.ts
 
 which is the three source files rolled into one, since the editor is easier to fill with a
 single file. That bundle is generated and gitignored -- edit the three files and rebuild
-it, never the bundle. The API key goes in **Edge Functions -> Secrets** as
-`ANTHROPIC_API_KEY`.
+it, never the bundle. The API key goes in **Edge Functions -> Secrets** under the
+provider's name (`OPENAI_API_KEY` for the default model).
 
 The edge function is outside `tsc`'s scope, so `npm run build` says nothing about it.
 Type-check it with `npm run coach:check`, which runs Deno's checker over the real
