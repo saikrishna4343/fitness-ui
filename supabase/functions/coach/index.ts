@@ -7,8 +7,8 @@
  * protection, and anyone with DevTools could spend it.
  *
  * Deploy:
- *   supabase secrets set GEMINI_API_KEY=...        (or ANTHROPIC_API_KEY)
- *   supabase secrets set COACH_MODEL=gemini-3.8-flash
+ *   supabase secrets set OPENAI_API_KEY=...        (or GEMINI_API_KEY, ANTHROPIC_API_KEY)
+ *   supabase secrets set COACH_MODEL=gpt-5-mini
  *   supabase functions deploy coach
  *
  * SUPABASE_URL and SUPABASE_ANON_KEY are injected by the platform; there is no
@@ -17,6 +17,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { runAnthropicTurn } from './anthropic.ts'
 import { runGeminiTurn } from './gemini.ts'
+import { runOpenAiTurn } from './openai.ts'
 import { COACH_PROMPT } from './prompt.ts'
 import { TOOLS, type CoachContext } from './tools.ts'
 import type { TurnMessage, TurnRequest } from './providers.ts'
@@ -26,9 +27,10 @@ import type { TurnMessage, TurnRequest } from './providers.ts'
  *
  * An environment variable, so switching is a secret change rather than a code change —
  * which matters when the reason to switch is a free tier running out mid-session.
- * Anything starting "claude" goes to Anthropic; everything else to Gemini.
+ * Anything starting "claude" goes to Anthropic, "gpt" or "o<digit>" to OpenAI, and
+ * everything else to Gemini.
  */
-const MODEL = Deno.env.get('COACH_MODEL')?.trim() || 'gemini-3.8-flash'
+const MODEL = Deno.env.get('COACH_MODEL')?.trim() || 'gpt-5-mini'
 
 /** Messages replayed to the model. Older ones stay in the table for the UI. */
 const REPLAY_MESSAGES = 12
@@ -199,7 +201,9 @@ Deno.serve(async (req) => {
 
         const result = MODEL.startsWith('claude')
           ? await runAnthropicTurn(request)
-          : await runGeminiTurn(request)
+          : /^(gpt|o\d)/.test(MODEL)
+            ? await runOpenAiTurn(request)
+            : await runGeminiTurn(request)
 
         if (result.refused) {
           send({ type: 'error', message: 'The model declined to answer that one.' })
