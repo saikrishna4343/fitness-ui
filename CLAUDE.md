@@ -91,6 +91,16 @@ schema list (Dashboard → Integrations → Data API → Settings) or every requ
 - **Goals are date-scoped and carry forward.** A day with no goal of its own inherits the
   last one set, falling back to the profile defaults. Each day reports its `GoalSource` so
   a carried goal is never mistaken for one the user set.
+- **Calories burned are exercise only, and computed in `daily_summary()`.** A number typed
+  on the workout (`calories_burned`) wins; otherwise it is MET 5 × kg × hours, the hours
+  being `duration_minutes` or two minutes per *completed* set. `burn_source` says which.
+  `calories_remaining` is goal − food + burned, so the dashboard ring, the Progress
+  "within budget" count and the coach's `get_day` all agree. The client never recomputes
+  the estimate.
+- **The burn target follows intake.** `burn_goal` = calories eaten − calorie goal, floored
+  at the profile's `min_burn_goal` (default 600) on a training day and at 0 on a rest day.
+  Meeting it therefore always means the day ends within budget. `burnTargetReason()` in
+  `EnergyBalance.tsx` says which of the two set it.
 - **Dates are the client's, not the server's.** The client sends a calendar date
   (`toIsoDate` in `src/lib/format.ts`) plus an ISO instant for time eaten, so a meal at
   11pm counts toward the right local day.

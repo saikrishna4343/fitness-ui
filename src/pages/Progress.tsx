@@ -1,6 +1,6 @@
 import { format, parseISO, subDays } from 'date-fns'
 import { useMemo, useState } from 'react'
-import { Bar, BarChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, XAxis, YAxis } from 'recharts'
 import { useSummaryRange } from '@/api/hooks'
 import { PageHeader } from '@/components/AppShell'
 import { Button } from '@/components/ui/button'
@@ -25,9 +25,15 @@ const RANGES = [
   { days: 90, label: '90 days' },
 ]
 
-const calorieConfig = {
-  calories: { label: 'Calories eaten', color: 'var(--chart-1)' },
+// The Progress version of the dashboard's blue ring: food eaten against the day's budget
+// (goal + exercise). Over budget is red, as the ring turns red, and the legend and the
+// tooltip say it in words too, so the colour is never the only signal.
+const energyConfig = {
+  calories: { label: 'Food eaten', color: 'var(--chart-1)' },
+  budget: { label: 'Budget', color: 'var(--foreground)' },
 } satisfies ChartConfig
+
+type EnergyRow = DailySummary & { label: string; budget: number | null }
 
 const macroConfig = {
   proteinG: { label: 'Protein', color: 'var(--chart-1)' },
@@ -43,13 +49,20 @@ export default function Progress() {
 
   const { data: summaries = [], isLoading } = useSummaryRange(from, to)
 
-  const rows = useMemo(
-    () => summaries.map((day) => ({ ...day, label: format(parseISO(day.date), 'd MMM') })),
+  const rows = useMemo<EnergyRow[]>(
+    () =>
+      summaries.map((day) => ({
+        ...day,
+        label: format(parseISO(day.date), 'd MMM'),
+        // What the day allowed: the goal plus what exercise burned -- the blue ring's
+        // denominator. Null on a day with nothing logged, so an empty day shows no
+        // marker waiting for a bar that will never come.
+        budget: day.entryCount > 0 ? day.calorieGoal + day.caloriesBurned : null,
+      })),
     [summaries],
   )
 
   const stats = useMemo(() => computeStats(summaries), [summaries])
-  const calorieGoal = summaries.at(0)?.calorieGoal ?? 0
 
   return (
     <>
@@ -72,9 +85,23 @@ export default function Progress() {
         }
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Avg. calories / day" value={kcal(stats.avgCalories)} unit="kcal" />
-        <StatTile label="Days logged" value={String(stats.daysLogged)} unit={`of ${days}`} />
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile label="Avg. eaten / day" value={kcal(stats.avgCalories)} unit="kcal" />
+        <StatTile
+          label="Avg. burned / workout"
+          value={kcal(stats.avgBurned)}
+          unit="kcal"
+        />
+        <StatTile
+          label="Within budget"
+          value={String(stats.withinBudget)}
+          unit={`of ${stats.daysLogged} logged days`}
+        />
+        <StatTile
+          label="Burn target hit"
+          value={String(stats.burnGoalHit)}
+          unit={`of ${stats.targetDays} days with a target`}
+        />
         <StatTile label="Workouts completed" value={String(stats.workoutsCompleted)} />
         <StatTile label="Current streak" value={String(stats.streak)} unit="days" />
       </div>
@@ -91,14 +118,16 @@ export default function Progress() {
           <TabsContent value="chart" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Calories per day</CardTitle>
+                <CardTitle>Energy balance</CardTitle>
                 <CardDescription>
-                  Bars are what you ate. The dashed line is your {kcal(calorieGoal)} kcal goal.
+                  Each bar is the food you ate. The line across it is that day&apos;s budget:
+                  your goal plus what you burned. Stay under the line to stay within budget.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <ChartContainer config={calorieConfig} className="h-72 w-full">
-                  <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <CardContent className="space-y-3">
+                <EnergyLegend />
+                <ChartContainer config={energyConfig} className="h-72 w-full">
+                  <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                     <CartesianGrid vertical={false} strokeOpacity={0.4} />
                     <XAxis
                       dataKey="label"
@@ -107,16 +136,32 @@ export default function Progress() {
                       tickMargin={8}
                       minTickGap={24}
                     />
-                    <YAxis tickLine={false} axisLine={false} width={44} tickMargin={4} />
-                    <ChartTooltip content={<ChartTooltipContent />} cursor={{ opacity: 0.12 }} />
-                    <ReferenceLine
-                      y={calorieGoal}
-                      stroke="var(--muted-foreground)"
-                      strokeDasharray="4 4"
-                      label={{ value: 'Goal', position: 'insideTopRight', fontSize: 11 }}
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={48}
+                      tickMargin={4}
+                      tickFormatter={(value: number) => kcal(value)}
                     />
-                    <Bar dataKey="calories" fill="var(--color-calories)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
+                    <ChartTooltip cursor={{ opacity: 0.12 }} content={<EnergyTooltip />} />
+                    <Bar dataKey="calories" radius={[4, 4, 0, 0]} maxBarSize={28}>
+                      {rows.map((row) => (
+                        <Cell
+                          key={row.date}
+                          fill={row.caloriesRemaining < 0 ? 'var(--destructive)' : 'var(--color-calories)'}
+                        />
+                      ))}
+                    </Bar>
+                    {/* Drawn as a tick per day rather than a connected line: each day has
+                        its own budget, and a line joining them would suggest a trend. */}
+                    <Line
+                      dataKey="budget"
+                      stroke="none"
+                      isAnimationActive={false}
+                      dot={<BudgetTick halfWidth={days <= 7 ? 16 : days <= 30 ? 8 : 3} />}
+                      activeDot={false}
+                    />
+                  </ComposedChart>
                 </ChartContainer>
               </CardContent>
             </Card>
@@ -160,7 +205,11 @@ export default function Progress() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Calories</TableHead>
+                      <TableHead className="text-right">Eaten</TableHead>
+                      <TableHead className="text-right">Burned</TableHead>
+                      <TableHead className="text-right">Burn target</TableHead>
+                      <TableHead className="text-right">Net</TableHead>
+                      <TableHead className="text-right">Goal</TableHead>
                       <TableHead className="text-right">Protein</TableHead>
                       <TableHead className="text-right">Carbs</TableHead>
                       <TableHead className="text-right">Fat</TableHead>
@@ -172,6 +221,26 @@ export default function Progress() {
                       <TableRow key={row.date}>
                         <TableCell className="whitespace-nowrap">{row.label}</TableCell>
                         <TableCell className="text-right tabular-nums">{kcal(row.calories)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">
+                          {kcal(row.caloriesBurned)}
+                          {row.burnSource === 'ESTIMATED' && (
+                            <span className="ml-1 text-xs text-muted-foreground" title="Estimated">
+                              est.
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
+                          {row.burnGoal > 0 ? kcal(row.burnGoal) : '—'}
+                          {row.burnGoal > 0 && row.caloriesBurned >= row.burnGoal && (
+                            <span className="ml-1 text-foreground" title="Target hit">
+                              ✓
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{kcal(row.netCalories)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                          {kcal(row.calorieGoal)}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums">{grams(row.proteinG)} g</TableCell>
                         <TableCell className="text-right tabular-nums">{grams(row.carbsG)} g</TableCell>
                         <TableCell className="text-right tabular-nums">{grams(row.fatG)} g</TableCell>
@@ -193,6 +262,74 @@ export default function Progress() {
   )
 }
 
+function EnergyLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        <span className="size-2.5 rounded-[2px] bg-chart-1" aria-hidden />
+        Within budget
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="size-2.5 rounded-[2px] bg-destructive" aria-hidden />
+        Over budget
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="h-0.5 w-3.5 rounded-full bg-foreground" aria-hidden />
+        Budget (goal + exercise)
+      </span>
+    </div>
+  )
+}
+
+/** The budget marker: a short horizontal line centred on the day's bar. */
+function BudgetTick({ cx, cy, halfWidth = 8 }: { cx?: number; cy?: number; halfWidth?: number }) {
+  if (cx == null || cy == null || Number.isNaN(cy)) return null
+  return (
+    <line
+      x1={cx - halfWidth}
+      x2={cx + halfWidth}
+      y1={cy}
+      y2={cy}
+      stroke="var(--foreground)"
+      strokeWidth={2}
+      strokeLinecap="round"
+    />
+  )
+}
+
+/** Hovering a day shows the same sum as the boxes under the dashboard ring. */
+function EnergyTooltip({ active, payload }: { active?: boolean; payload?: { payload: EnergyRow }[] }) {
+  const day = payload?.[0]?.payload
+  if (!active || !day) return null
+  const over = day.caloriesRemaining < 0
+  return (
+    <div className="grid min-w-44 gap-1 rounded-lg border bg-background px-3 py-2 text-xs shadow-xl">
+      <p className="font-medium">{format(parseISO(day.date), 'EEE d MMM')}</p>
+      <Row label="Goal" value={kcal(day.calorieGoal)} />
+      <Row label="+ Exercise" value={kcal(day.caloriesBurned)} />
+      <Row label="− Food" value={kcal(day.calories)} />
+      <div className="mt-0.5 border-t pt-1">
+        <Row
+          label={over ? '= Over' : '= Left'}
+          value={kcal(Math.abs(day.caloriesRemaining))}
+          strong={over ? 'text-destructive' : 'text-foreground'}
+        />
+      </div>
+    </div>
+  )
+}
+
+function Row({ label, value, strong }: { label: string; value: string; strong?: string }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span className={strong ? `font-medium ${strong}` : 'text-muted-foreground'}>{label}</span>
+      <span className={`tabular-nums ${strong ? `font-medium ${strong}` : 'text-foreground'}`}>
+        {value} kcal
+      </span>
+    </div>
+  )
+}
+
 function StatTile({ label, value, unit }: { label: string; value: string; unit?: string }) {
   return (
     <Card>
@@ -211,6 +348,16 @@ function computeStats(summaries: DailySummary[]) {
   const logged = summaries.filter((day) => day.entryCount > 0)
   const avgCalories =
     logged.length === 0 ? 0 : logged.reduce((total, day) => total + day.calories, 0) / logged.length
+
+  // Days that asked for any burning: every training day (the minimum), and a rest day
+  // only when it was eaten over its goal.
+  const targeted = summaries.filter((day) => day.burnGoal > 0)
+  const burned = summaries.filter((day) => day.caloriesBurned > 0)
+  const avgBurned =
+    burned.length === 0 ? 0 : burned.reduce((total, day) => total + day.caloriesBurned, 0) / burned.length
+
+  const withinBudget = logged.filter((day) => day.caloriesRemaining >= 0).length
+  const burnGoalHit = targeted.filter((day) => day.caloriesBurned >= day.burnGoal).length
   const workoutsCompleted = summaries.filter((day) => day.workoutStatus === 'COMPLETED').length
 
   // Consecutive days ending today on which something was logged.
@@ -220,5 +367,14 @@ function computeStats(summaries: DailySummary[]) {
     streak++
   }
 
-  return { avgCalories, daysLogged: logged.length, workoutsCompleted, streak }
+  return {
+    avgCalories,
+    avgBurned,
+    daysLogged: logged.length,
+    withinBudget,
+    targetDays: targeted.length,
+    burnGoalHit,
+    workoutsCompleted,
+    streak,
+  }
 }

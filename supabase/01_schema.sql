@@ -48,7 +48,12 @@ create table fitness.user_profile (
     protein_goal       integer not null default 150,
     carbs_goal         integer not null default 200,
     fat_goal           integer not null default 65,
-    timezone           text    not null default 'UTC',
+    -- The floor under a training day's burn target. The target itself is whatever
+    -- was eaten above the calorie goal (see daily_summary); this keeps it from
+    -- dropping to nothing on a day you ate well. Rest days get no floor.
+    min_burn_goal      integer not null default 600
+                       check (min_burn_goal between 0 and 10000),
+    timezone          text    not null default 'UTC',
     created_at         timestamptz not null default now(),
     updated_at         timestamptz not null default now()
 );
@@ -171,6 +176,10 @@ create table fitness.workout_session (
                  check (status in ('PLANNED', 'IN_PROGRESS', 'COMPLETED', 'SKIPPED')),
     completed_at timestamptz,
     notes        text,
+    -- Both optional. calories_burned is a number the user read off a watch and
+    -- overrides the estimate; duration_minutes sharpens the estimate instead.
+    calories_burned  integer check (calories_burned between 0 and 10000),
+    duration_minutes integer check (duration_minutes between 1 and 1440),
     unique (user_id, session_date)
 );
 

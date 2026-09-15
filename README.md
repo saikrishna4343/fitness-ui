@@ -35,14 +35,14 @@ Two rules hold throughout that file:
 
 | Route | What it does |
 |---|---|
-| `/` | Today at a glance: calorie ring against your goal, macro bars, and today's workout with a checkbox per exercise. |
-| `/food` | The food log for any date. Entries grouped by meal, each showing the time you ate. Add, edit, delete, and set that day's goal. |
-| `/workout` | The full workout for any date: tick exercises, record the weight and reps you actually did, add one-off exercises, complete or skip. |
+| `/` | Today at a glance: two rings (food against the day's budget, exercise against a burn target set by what you ate over your goal), the goal + exercise − food = left breakdown, macro bars, and today's workout with a checkbox per exercise. |
+| `/food` | The food log for any date, topped by four rings — calories against the day's budget, protein, carbs and fat against their goals. Entries grouped by meal, each showing the time you ate. Add, edit, delete, and set that day's goal. |
+| `/workout` | The full workout for any date: tick exercises, record the weight and reps you actually did, add one-off exercises, complete or skip. Calories burned are estimated from the ticked sets, or from the duration, or entered from a watch. |
 | `/plan` | The weekly split. Set each day's focus, mark rest days, add/edit/reorder exercises. |
 | `/timer` | Interval (HIIT) timer, wired to today's workout in both directions. Groups run as a circuit or as straight sets, with per-exercise work time, gaps, warm-up and cool-down — counted down out loud. |
 | `/coach` | An AI coach for meals and training. It reads your own log to answer, and can add exercises to today's workout when you ask. The same conversation is a tap away from every other screen, from the button in the bottom right. |
-| `/progress` | Calories and macros per day over 7/30/90 days, with a table view, plus streak and workout stats. |
-| `/settings` | Your profile, default calorie and macro goals, and your saved-foods library. |
+| `/progress` | Energy balance per day over 7/30/90 days (food eaten against that day's budget of goal + exercise, red when over) and macros, with a table view, plus days within budget, burn targets hit, streak and workout stats. |
+| `/settings` | Your profile, default calorie and macro goals, the training-day minimum burn, and your saved-foods library. |
 
 ## Setup
 
@@ -80,6 +80,12 @@ profile table created before that column existed. Run it once, then re-run `03_a
 `ensure_profile()` returns the table's own row type, so it has to be recreated before the
 new column reaches the API. A fresh install gets the column from `01_schema.sql` and must
 skip it.
+
+`supabase/14_calories_burned.sql` is not part of setup either. It adds `calories_burned` and
+`duration_minutes` to workouts and `min_burn_goal` to the profile, on a database created
+before they existed. Run it once, then re-run `03_api.sql` -- `daily_summary()` gains the
+burn columns and `ensure_profile()` has to be recreated to serve the new profile column. A
+fresh install gets all three from `01_schema.sql` and must skip it.
 
 `supabase/05_adopt_dev_data.sql` is not part of setup. It is a one-time migration kept for
 reference, from when this app ran behind a Spring Boot service that hardcoded a single dev

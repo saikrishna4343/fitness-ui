@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/AppShell'
 import { DatePicker } from '@/components/DatePicker'
 import { FoodEntryDialog } from '@/components/FoodEntryDialog'
 import { GoalDialog } from '@/components/GoalDialog'
+import { NutrientRings } from '@/components/NutrientRings'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -53,16 +54,8 @@ export default function FoodLog() {
 
       {summary && (
         <Card className="mb-4">
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Stat
-                label="Calories"
-                value={`${kcal(summary.calories)} / ${kcal(summary.calorieGoal)}`}
-              />
-              <Stat label="Protein" value={`${grams(summary.proteinG)} g`} />
-              <Stat label="Carbs" value={`${grams(summary.carbsG)} g`} />
-              <Stat label="Fat" value={`${grams(summary.fatG)} g`} />
-            </div>
+          <CardContent className="space-y-4">
+            <NutrientRings summary={summary} />
             <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
               <p className="text-xs text-muted-foreground">{goalProvenance(summary)}</p>
               <Button variant="outline" size="sm" className="gap-2" onClick={() => setGoalOpen(true)}>
@@ -148,15 +141,6 @@ export default function FoodLog() {
       <FoodEntryDialog open={dialogOpen} onOpenChange={setDialogOpen} date={date} entry={editing} />
       <GoalDialog open={goalOpen} onOpenChange={setGoalOpen} date={date} />
     </>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-lg font-semibold tabular-nums">{value}</p>
-    </div>
   )
 }
 

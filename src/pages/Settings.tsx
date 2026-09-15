@@ -74,6 +74,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
         proteinGoal: Number(form.proteinGoal),
         carbsGoal: Number(form.carbsGoal),
         fatGoal: Number(form.fatGoal),
+        minBurnGoal: Number(form.minBurnGoal),
       },
       {
         onSuccess: () => toast.success('Settings saved'),
@@ -87,7 +88,8 @@ function ProfileForm({ profile }: { profile: Profile }) {
       <CardHeader>
         <CardTitle>Profile and goals</CardTitle>
         <CardDescription>
-          Your calorie goal drives the ring on the dashboard and the reference line on the charts.
+          Your calorie and burn goals drive the rings on the dashboard and the reference lines on
+          the charts.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -198,7 +200,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
             </p>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <Field label="Calories / day" htmlFor="calorie-goal">
               <Input
                 id="calorie-goal"
@@ -231,7 +233,22 @@ function ProfileForm({ profile }: { profile: Profile }) {
                 onChange={(event) => set('fatGoal', Number(event.target.value))}
               />
             </Field>
+            <Field label="Min. burn / training day" htmlFor="burn-goal">
+              <Input
+                id="burn-goal"
+                type="number"
+                min={0}
+                max={10000}
+                value={form.minBurnGoal}
+                onChange={(event) => set('minBurnGoal', Number(event.target.value))}
+              />
+            </Field>
           </div>
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Each day's burn target is what you ate above your calorie goal, so meeting it keeps
+            the day within budget. On a training day it never drops below this minimum; a rest
+            day has no minimum.
+          </p>
 
           <Button type="submit" disabled={update.isPending}>
             {update.isPending ? 'Saving…' : 'Save settings'}

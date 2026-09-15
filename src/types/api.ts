@@ -28,6 +28,9 @@ export interface Profile {
   proteinGoal: number
   carbsGoal: number
   fatGoal: number
+  /** Exercise calories to aim for on a training day. */
+  /** Floor under a training day's burn target. The target itself is calories eaten above the goal. */
+  minBurnGoal: number
   timezone: string
 }
 
@@ -40,6 +43,15 @@ export type UpdateProfileRequest = Partial<Omit<Profile, 'userId'>>
  * `CARRIED`  — inherited from the most recent earlier date that was set.
  * `DEFAULT`  — nothing set on or before it, so the profile values apply.
  */
+/**
+ * Where a day's calories burned came from.
+ *
+ * `LOGGED`    — typed in by the user (from a watch, say).
+ * `ESTIMATED` — worked out from the workout: its duration, or the sets ticked.
+ * `NONE`      — nothing to go on: a rest day, or nothing ticked yet.
+ */
+export type BurnSource = 'LOGGED' | 'ESTIMATED' | 'NONE'
+
 export type GoalSource = 'EXPLICIT' | 'CARRIED' | 'DEFAULT'
 
 export interface ResolvedGoal {
@@ -165,6 +177,9 @@ export interface Workout {
   status: WorkoutStatus
   completedAt: string | null
   notes: string | null
+  /** Typed in by the user; overrides the estimate. */
+  caloriesBurned: number | null
+  durationMinutes: number | null
   completedCount: number
   totalCount: number
   exercises: WorkoutExercise[]
@@ -175,6 +190,8 @@ export interface UpdateWorkoutRequest {
   restDay?: boolean
   focus?: string
   notes?: string | null
+  caloriesBurned?: number | null
+  durationMinutes?: number | null
 }
 
 /** Body of POST /api/workouts/{id}/exercises. Adds to this session only, not the plan. */
@@ -213,4 +230,16 @@ export interface DailySummary {
   goalSource: GoalSource
   /** The date the goal was set on. Null when it came from the profile defaults. */
   goalSetOn: string | null
+  /** Exercise calories: the logged number when there is one, else the estimate. */
+  caloriesBurned: number
+  /** The estimate alone, shown beside a logged number and as its placeholder. */
+  estimatedBurn: number
+  burnSource: BurnSource
+  /**
+   * Calories to burn today: whatever was eaten above the calorie goal, but never less
+   * than the profile minimum on a training day. Zero on a rest day eaten within budget.
+   */
+  burnGoal: number
+  /** Eaten minus burned. `caloriesRemaining` is calorieGoal minus this. */
+  netCalories: number
 }

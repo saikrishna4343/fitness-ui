@@ -173,7 +173,27 @@ $$;
 -- Replaces SummaryService.range: one row per day, both ends inclusive, zero-filled
 -- so the Progress chart draws a continuous line, with each day carrying the goal
 -- that was in force FOR THAT DAY rather than today's profile value.
-create or replace function fitness.daily_summary(p_from date, p_to date)
+--
+-- Energy out is the workout's alone -- `calories_burned` counts exercise, not the
+-- calories burned at rest, which the calorie goal already accounts for. A number
+-- the user typed (from a watch, say) wins; otherwise it is estimated with the
+-- MET formula, kcal = MET x kg x hours, at MET 5 (moderate-to-vigorous resistance
+-- training). The hours are the workout's recorded duration when there is one,
+-- and two minutes per completed set -- work plus rest -- when there is not. Only
+-- ticked exercises count, so an abandoned session burns nothing. Weight falls
+-- back to 70 kg until the profile has one; `burn_source` says which case applied.
+--
+-- The burn target follows what was eaten: every calorie above the day's goal has to
+-- be burned to end the day within budget, so that excess IS the target. On a training
+-- day it never drops below the profile's min_burn_goal; a rest day gets no floor, so
+-- its target is zero unless something was eaten over the goal. Hitting the target
+-- therefore always means calories_remaining >= 0.
+--
+-- Dropped first because the return type grew columns, which `create or replace`
+-- refuses. The grant at the bottom of this file restores execute.
+drop function if exists fitness.daily_summary(date, date);
+
+create function fitness.daily_summary(p_from date, p_to date)
 returns table (
     date                date,
     calories            integer,
@@ -191,7 +211,12 @@ returns table (
     exercises_completed integer,
     exercises_total     integer,
     goal_source         text,
-    goal_set_on         date
+    goal_set_on         date,
+    calories_burned     integer,
+    estimated_burn      integer,
+    burn_source         text,
+    burn_goal           integer,
+    net_calories        integer
 )
 language sql
 stable
@@ -221,13 +246,29 @@ as $$
                s.focus,
                s.rest_day,
                s.status,
+               s.calories_burned,
+               s.duration_minutes,
                count(x.*) filter (where x.completed)::integer as completed_count,
-               count(x.*)::integer                           as total_count
+               count(x.*)::integer                           as total_count,
+               coalesce(sum(x.target_sets) filter (where x.completed), 0)::integer as sets_done
           from fitness.workout_session s
           left join fitness.session_exercise x on x.session_id = s.id
          where s.user_id = auth.uid()
            and s.session_date between p_from and p_to
-         group by s.id, s.session_date, s.focus, s.rest_day, s.status
+         group by s.id, s.session_date, s.focus, s.rest_day, s.status,
+                  s.calories_burned, s.duration_minutes
+    ),
+    burn as (
+        select sess.session_date,
+               sess.calories_burned as logged,
+               case
+                   when sess.rest_day then 0
+                   when sess.duration_minutes is not null
+                       then round(5.0 * coalesce(prof.weight_kg, 70) * sess.duration_minutes / 60.0)
+                   else round(5.0 * coalesce(prof.weight_kg, 70) * sess.sets_done * 2 / 60.0)
+               end::integer as estimated
+          from sess
+          cross join prof
     )
     select days.date,
            coalesce(food.calories, 0),
@@ -238,9 +279,11 @@ as $$
            coalesce(g.protein_goal,       prof.protein_goal),
            coalesce(g.carbs_goal,         prof.carbs_goal),
            coalesce(g.fat_goal,           prof.fat_goal),
-           -- Goes negative on purpose: the UI renders that as over budget.
+           -- Goal - food + exercise. Goes negative on purpose: the UI renders that
+           -- as over budget.
            coalesce(g.daily_calorie_goal, prof.daily_calorie_goal)
-               - coalesce(food.calories, 0),
+               - coalesce(food.calories, 0)
+               + coalesce(burn.logged, burn.estimated, 0),
            coalesce(food.entry_count, 0),
            -- Null on a rest day, even though the session still carries a focus.
            case when sess.rest_day then null else sess.focus end,
@@ -252,11 +295,25 @@ as $$
                when g.goal_date is not null  then 'CARRIED'
                else                               'DEFAULT'
            end,
-           g.goal_date
+           g.goal_date,
+           coalesce(burn.logged, burn.estimated, 0),
+           coalesce(burn.estimated, 0),
+           case
+               when burn.logged is not null then 'LOGGED'
+               when burn.estimated > 0      then 'ESTIMATED'
+               else                              'NONE'
+           end,
+           greatest(
+               coalesce(food.calories, 0) - coalesce(g.daily_calorie_goal, prof.daily_calorie_goal),
+               case when sess.rest_day = false then prof.min_burn_goal else 0 end,
+               0
+           ),
+           coalesce(food.calories, 0) - coalesce(burn.logged, burn.estimated, 0)
       from days
       cross join prof
       left join food on food.entry_date   = days.date
       left join sess on sess.session_date = days.date
+      left join burn on burn.session_date = days.date
       left join lateral (
            select d.*
              from fitness.daily_goal d
