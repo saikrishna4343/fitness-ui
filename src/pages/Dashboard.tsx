@@ -2,7 +2,7 @@ import { UtensilsCrossed } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDailySummary, useFoodEntries, useProfile, useWorkout } from '@/api/hooks'
 import { PageHeader } from '@/components/AppShell'
-import { CalorieRing } from '@/components/CalorieRing'
+import { BurnGoalLine, EnergyEquation, EnergyRings } from '@/components/EnergyBalance'
 import { ExerciseChecklist } from '@/components/ExerciseChecklist'
 import { MacroBars } from '@/components/MacroBars'
 import { Badge } from '@/components/ui/badge'
@@ -68,9 +68,9 @@ export default function Dashboard() {
           <CardContent className="flex flex-1 flex-col gap-4">
             <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center">
               {summaryLoading || !summary ? (
-                <Skeleton className="size-44 rounded-full" />
+                <Skeleton className="size-46 rounded-full" />
               ) : (
-                <CalorieRing consumed={summary.calories} goal={summary.calorieGoal} />
+                <EnergyRings summary={summary} />
               )}
               <div className="w-full flex-1">
                 {summary ? (
@@ -84,6 +84,23 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+
+            {summary ? (
+              <div className="space-y-2">
+                <EnergyEquation summary={summary} />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <BurnGoalLine summary={summary} />
+                  <Link
+                    to="/workout"
+                    className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                  >
+                    {summary.burnSource === 'LOGGED' ? 'Edit calories burned' : 'Log calories burned'}
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <Skeleton className="h-16 w-full" />
+            )}
 
             <Separator />
 

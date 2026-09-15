@@ -3,6 +3,7 @@ import { ApiError } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 import type {
   AddSessionExerciseRequest,
+  BurnSource,
   DailySummary,
   Food,
   FoodEntry,
@@ -108,6 +109,7 @@ type ProfileRow = {
   protein_goal: number
   carbs_goal: number
   fat_goal: number
+  min_burn_goal: number
   timezone: string
 }
 
@@ -129,6 +131,11 @@ type SummaryRow = {
   exercises_total: number
   goal_source: GoalSource
   goal_set_on: string | null
+  calories_burned: number
+  estimated_burn: number
+  burn_source: BurnSource
+  burn_goal: number
+  net_calories: number
 }
 
 const toProfile = (r: ProfileRow): Profile => ({
@@ -145,6 +152,7 @@ const toProfile = (r: ProfileRow): Profile => ({
   proteinGoal: r.protein_goal,
   carbsGoal: r.carbs_goal,
   fatGoal: r.fat_goal,
+  minBurnGoal: r.min_burn_goal,
   timezone: r.timezone,
 })
 
@@ -166,6 +174,11 @@ const toSummary = (r: SummaryRow): DailySummary => ({
   exercisesTotal: r.exercises_total,
   goalSource: r.goal_source,
   goalSetOn: r.goal_set_on,
+  caloriesBurned: r.calories_burned,
+  estimatedBurn: r.estimated_burn,
+  burnSource: r.burn_source,
+  burnGoal: r.burn_goal,
+  netCalories: r.net_calories,
 })
 
 const toGoal = (r: SummaryRow): ResolvedGoal => ({
@@ -230,6 +243,7 @@ export function useUpdateProfile() {
       if (body.proteinGoal !== undefined) patch.protein_goal = body.proteinGoal
       if (body.carbsGoal !== undefined) patch.carbs_goal = body.carbsGoal
       if (body.fatGoal !== undefined) patch.fat_goal = body.fatGoal
+      if (body.minBurnGoal !== undefined) patch.min_burn_goal = body.minBurnGoal
       if (body.timezone !== undefined) patch.timezone = body.timezone
 
       const { data: session } = await supabase.auth.getSession()
@@ -608,6 +622,8 @@ type SessionRow = {
   status: WorkoutStatus
   completedAt: string | null
   notes: string | null
+  caloriesBurned: number | null
+  durationMinutes: number | null
   exercises: WorkoutExercise[]
 }
 
@@ -621,6 +637,7 @@ async function fetchWorkout(date: string): Promise<Workout> {
       .select(
         `id, sessionDate:session_date, dayOfWeek:day_of_week, focus, restDay:rest_day,
          status, completedAt:completed_at, notes,
+         caloriesBurned:calories_burned, durationMinutes:duration_minutes,
          exercises:session_exercise(${SESSION_EXERCISE_COLS})`,
       )
       .eq('id', sessionId)
@@ -649,6 +666,8 @@ export function useUpdateWorkout(date: string) {
       if (body.restDay !== undefined) patch.rest_day = body.restDay
       if (body.focus !== undefined) patch.focus = body.focus
       if (body.notes !== undefined) patch.notes = body.notes
+      if (body.caloriesBurned !== undefined) patch.calories_burned = body.caloriesBurned
+      if (body.durationMinutes !== undefined) patch.duration_minutes = body.durationMinutes
       ok(await supabase.from('workout_session').update(patch).eq('id', id))
       return fetchWorkout(date)
     },
